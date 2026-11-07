@@ -37,18 +37,43 @@ public class ResourceStorageClient {
                 .build();
     }
 
-    public void upload(String userToken, String path, String contentType, byte[] content) {
+    /**
+     * A one-time URL the browser can PUT the file to directly. Files go
+     * straight to storage because Vercel Functions cap request bodies at
+     * 4.5 MB; signing still runs as the teacher, so the insert policy applies.
+     */
+    public URI createSignedUploadUrl(String userToken, String path) {
         try {
-            restClient.post()
-                    .uri("/object/{bucket}/" + path, properties.bucket())
+            SignedUploadUrlResponse response = restClient.post()
+                    .uri("/object/upload/sign/{bucket}/" + path, properties.bucket())
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken)
-                    .header("x-upsert", "false")
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .body(content)
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(SignedUploadUrlResponse.class);
+            if (response == null || response.url() == null) {
+                throw new StorageException("Storage returned no upload URL");
+            }
+            // url is relative to the storage API root, e.g. "/object/upload/sign/<bucket>/<path>?token=…"
+            return URI.create(properties.url() + response.url());
         } catch (RestClientException ex) {
-            throw new StorageException("Couldn't store the uploaded file", ex);
+            throw new StorageException("Couldn't prepare the file upload", ex);
+        }
+    }
+
+    public byte[] download(String userToken, String path) {
+        try {
+            byte[] content = restClient.get()
+                    .uri("/object/authenticated/{bucket}/" + path, properties.bucket())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken)
+                    .retrieve()
+                    .body(byte[].class);
+            return content == null ? new byte[0] : content;
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().value() == 400 || ex.getStatusCode().value() == 404) {
+                throw new StoredObjectNotFoundException();
+            }
+            throw new StorageException("Couldn't read the uploaded file", ex);
+        } catch (RestClientException ex) {
+            throw new StorageException("Couldn't read the uploaded file", ex);
         }
     }
 
@@ -94,7 +119,10 @@ public class ResourceStorageClient {
     private record SignedUrlResponse(String signedURL) {
     }
 
-    /** The object doesn't exist (Supabase answers 400 "Object not found" for signing). */
+    private record SignedUploadUrlResponse(String url) {
+    }
+
+    /** The object doesn't exist (Supabase answers 400 "Object not found" for signing and reads). */
     public static class StoredObjectNotFoundException extends RuntimeException {
     }
 }

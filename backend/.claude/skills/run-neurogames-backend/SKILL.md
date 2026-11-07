@@ -99,7 +99,8 @@ Not verified by this skill (it needs the project's DB password).
   using other Supabase internals (e.g. `auth.jwt()`, `storage.*`) needs the stub
   in `driver.mjs` (`AUTH_STUB_SQL`) extended.
 - **Storage is faked too.** The JWKS server (`SUPABASE_URL`) also serves the
-  Storage API calls the backend makes (upload, sign, signed download, delete),
+  Storage API calls the backend and browser make (signed upload URL + PUT,
+  authenticated read, upload, sign, signed download, delete),
   with files on disk under `target/run-harness/storage/`. Each operation runs
   in Postgres *as the calling user* against a stub `storage.objects`, so the
   real bucket RLS policies from `schema.sql` decide access.

@@ -30,6 +30,22 @@ class MaterialServiceStoragePathTest {
     }
 
     @Test
+    void issuedPathsAreAcceptedForTheirOwnCollectionOnly() {
+        String path = MaterialService.storagePath(COLLECTION, "Week 3: Synapses.pdf");
+        assertThat(MaterialService.isUploadPathFor(COLLECTION, path)).isTrue();
+        assertThat(MaterialService.isUploadPathFor(UUID.randomUUID(), path)).isFalse();
+    }
+
+    @Test
+    void foreignOrMalformedPathsAreRejected() {
+        String folder = COLLECTION + "/" + UUID.randomUUID() + "/";
+        assertThat(MaterialService.isUploadPathFor(COLLECTION, null)).isFalse();
+        assertThat(MaterialService.isUploadPathFor(COLLECTION, folder + "../other.pdf")).isFalse();
+        assertThat(MaterialService.isUploadPathFor(COLLECTION, folder + "a/b.pdf")).isFalse();
+        assertThat(MaterialService.isUploadPathFor(COLLECTION, COLLECTION + "/notes.pdf")).isFalse();
+    }
+
+    @Test
     void sameNameUploadsGetDistinctPaths() {
         assertThat(MaterialService.storagePath(COLLECTION, "a.txt"))
                 .isNotEqualTo(MaterialService.storagePath(COLLECTION, "a.txt"));

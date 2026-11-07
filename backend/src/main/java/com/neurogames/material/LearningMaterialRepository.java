@@ -10,4 +10,6 @@ public interface LearningMaterialRepository extends JpaRepository<LearningMateri
     List<LearningMaterial> findAllByCollectionId(UUID collectionId);
 
     Optional<LearningMaterial> findByIdAndCollectionId(UUID id, UUID collectionId);
+
+    boolean existsByStoragePath(String storagePath);
 }

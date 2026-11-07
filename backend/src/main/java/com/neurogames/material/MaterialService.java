@@ -1,26 +1,31 @@
 package com.neurogames.material;
 
 import com.neurogames.collection.CollectionRepository;
+import com.neurogames.common.exception.InvalidRequestException;
 import com.neurogames.common.exception.ResourceNotFoundException;
 import com.neurogames.config.StorageProperties;
 import com.neurogames.material.dto.LearningMaterialResponse;
 import com.neurogames.material.dto.MaterialDownloadResponse;
+import com.neurogames.material.dto.MaterialUploadUrlResponse;
 import com.neurogames.storage.ResourceStorageClient;
 import com.neurogames.storage.ResourceStorageClient.StoredObjectNotFoundException;
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional
 public class MaterialService {
 
     private static final int MAX_STORED_NAME_LENGTH = 100;
+    private static final Pattern UPLOAD_PATH = Pattern.compile(
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/"
+                    + "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/"
+                    + "[A-Za-z0-9-][A-Za-z0-9._-]{0," + (MAX_STORED_NAME_LENGTH - 1) + "}");
 
     private final CollectionRepository collectionRepository;
     private final LearningMaterialRepository materialRepository;
@@ -41,30 +46,52 @@ public class MaterialService {
         this.storageProperties = storageProperties;
     }
 
-    public LearningMaterialResponse upload(UUID collectionId, UUID ownerId, String userToken, MultipartFile file) {
+    /**
+     * Step 1 of an upload: the browser PUTs the file straight to storage at
+     * the returned URL, then calls {@link #register}. Unsupported types are
+     * rejected here, before anything is stored.
+     */
+    @Transactional(readOnly = true)
+    public MaterialUploadUrlResponse createUploadUrl(UUID collectionId, UUID ownerId, String userToken, String filename) {
+        requireOwnedCollection(collectionId, ownerId);
+        extractor.detectFileType(filename);
+
+        String path = storagePath(collectionId, filename);
+        String uploadUrl = storageClient.createSignedUploadUrl(userToken, path).toString();
+        return new MaterialUploadUrlResponse(uploadUrl, path);
+    }
+
+    /** Step 2: read the uploaded object back, extract its text and record it. */
+    public LearningMaterialResponse register(
+            UUID collectionId, UUID ownerId, String userToken, String path, String filename) {
         requireOwnedCollection(collectionId, ownerId);
 
-        if (file.isEmpty()) {
-            throw new MaterialExtractionException("Uploaded file is empty");
+        // Only paths createUploadUrl could have issued for this collection;
+        // the bucket's RLS would refuse others anyway, this just fails clearly.
+        if (!isUploadPathFor(collectionId, path)) {
+            throw new InvalidRequestException("That upload doesn't belong to this collection");
+        }
+        if (materialRepository.existsByStoragePath(path)) {
+            throw new InvalidRequestException("That upload has already been added");
         }
 
-        // Unsupported type: reject outright, nothing stored, no row created.
-        FileType fileType = extractor.detectFileType(file.getOriginalFilename());
+        // Typed from the stored name, which kept the extension createUploadUrl checked.
+        FileType fileType = extractor.detectFileType(path);
 
         byte[] content;
         try {
-            content = file.getBytes();
-        } catch (IOException ex) {
-            throw new MaterialExtractionException("Couldn't read the uploaded file", ex);
+            content = storageClient.download(userToken, path);
+        } catch (StoredObjectNotFoundException ex) {
+            throw new InvalidRequestException("The uploaded file wasn't found — please try uploading again");
         }
-
-        // Keep the original in object storage first: if that fails, nothing is saved.
-        String path = storagePath(collectionId, file.getOriginalFilename());
-        storageClient.upload(userToken, path, contentType(fileType), content);
+        if (content.length == 0) {
+            storageClient.deleteQuietly(userToken, path);
+            throw new MaterialExtractionException("Uploaded file is empty");
+        }
 
         LearningMaterial material = new LearningMaterial();
         material.setCollectionId(collectionId);
-        material.setFilename(file.getOriginalFilename());
+        material.setFilename(filename);
         material.setStoragePath(path);
         material.setFileType(fileType);
 
@@ -129,13 +156,10 @@ public class MaterialService {
         return collectionId + "/" + UUID.randomUUID() + "/" + name;
     }
 
-    private static String contentType(FileType fileType) {
-        return switch (fileType) {
-            case PDF -> "application/pdf";
-            case DOCX -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            case PPTX -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-            case TEXT -> "text/plain";
-        };
+    /** True if path has the exact shape {@link #storagePath} produces for this collection. */
+    static boolean isUploadPathFor(UUID collectionId, String path) {
+        return path != null && UPLOAD_PATH.matcher(path).matches()
+                && path.startsWith(collectionId + "/");
     }
 
     private void requireOwnedCollection(UUID collectionId, UUID ownerId) {

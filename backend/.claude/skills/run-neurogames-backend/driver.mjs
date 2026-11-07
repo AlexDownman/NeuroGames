@@ -318,14 +318,16 @@ async function smoke() {
   check('deleted collection -> 404', r.status === 404, r.status);
 
   // --- collection resources: upload to storage, fetch back via signed URL ---
+  // The browser's flow: ask for a signed URL, PUT the bytes straight to
+  // storage, then register the stored object. Returns the first failing step.
   const upload = async (auth, cid, name, content, type = 'text/plain') => {
-    const form = new FormData();
-    form.append('file', new Blob([content], { type }), name);
-    const res = await fetch(`${APP}/api/collections/${cid}/materials`,
-      { method: 'POST', headers: auth.token ? { Authorization: `Bearer ${auth.token}` } : {}, body: form });
-    const text = await res.text();
-    let json; try { json = JSON.parse(text); } catch { json = undefined; }
-    return { status: res.status, json, text };
+    const signed = await call('POST', `/api/collections/${cid}/materials/upload-url`, JSON.stringify({ filename: name }), auth);
+    if (signed.status !== 200) return signed;
+    const put = await fetch(signed.json.uploadUrl, { method: 'PUT', headers: { 'Content-Type': type }, body: content });
+    if (!put.ok) return { status: put.status, text: await put.text() };
+    const registered = await call('POST', `/api/collections/${cid}/materials`,
+      JSON.stringify({ storagePath: signed.json.storagePath, filename: name }), auth);
+    return { ...registered, storagePath: signed.json.storagePath };
   };
   const storageCall = (token, method, objectPath, body) => fetch(`${SUPABASE_URL}/storage/v1/object/${objectPath}`, {
     method, headers: { apikey: 'harness-publishable-key', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -358,10 +360,22 @@ async function smoke() {
   sr = await storageCall(lect.token, 'POST', `Collection-Resources/not-a-uuid/x.txt`, {});
   check('storage RLS: folder that is not a collection id is refused', sr.status === 400, sr.status);
 
+  const register = (auth, storagePath) => call('POST', `/api/collections/${cid}/materials`,
+    JSON.stringify({ storagePath, filename: 'x.txt' }), auth);
+  r = await register(lect, objectPath);
+  check('registering the same upload twice -> 400', r.status === 400, `${r.status} ${r.text}`);
+  r = await register(lect, `${cid}/${crypto.randomUUID()}/never-uploaded.txt`);
+  check('registering a path nothing was uploaded to -> 400', r.status === 400 && r.json?.message?.includes("wasn't found"), r.text);
+  r = await call('POST', '/api/collections', JSON.stringify({ name: 'Someone else' }), other);
+  const otherUpload = await upload(other, r.json?.id, 'theirs.txt', 'not yours');
+  r = await register(lect, otherUpload.storagePath);
+  check("registering another collection's upload -> 400", r.status === 400, `${r.status} ${r.text}`);
   r = await upload(lect, cid, 'malware.exe', 'MZ');
-  check('unsupported type -> 400', r.status === 400, `${r.status} ${r.text}`);
+  check('unsupported type -> 400 before any URL is issued', r.status === 400, `${r.status} ${r.text}`);
   r = await upload({ token: anonToken().token }, cid, 'x.txt', 'hi');
   check('student cannot upload -> 403', r.status === 403, r.status);
+  r = await upload(lect, cid, 'empty.txt', '');
+  check('empty file -> 400 and its object is removed', r.status === 400, `${r.status} ${r.text}`);
   const objects = psql(`select count(*) from storage.objects where name like '${cid}/%';`, { quiet: true });
   check('exactly one object stored for the collection (rejected uploads stored nothing)', objects === '1', objects);
 
@@ -391,13 +405,15 @@ function tail(name, n) {
 }
 
 // The fake Supabase: serves the JWKS, plus enough of the Storage API for the
-// backend (upload, sign, signed download, delete). Each storage operation is
+// backend and browser (upload, signed upload URL + PUT, authenticated read,
+// sign, signed download, delete). Each storage operation is
 // recorded in storage.objects *as the calling user*, so the real bucket RLS
 // policies from schema.sql decide what is allowed. File bytes live on disk.
 function jwksServe() {
   const jwks = fs.readFileSync(path.join(STATE, 'jwks.json'));
   const filesRoot = path.join(STATE, 'storage');
   const signedTokens = new Map();
+  const uploadTokens = new Map();
   const SAFE = /^[A-Za-z0-9._\/-]+$/;
   const json = (res, status, obj) => res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(obj));
 
@@ -406,9 +422,11 @@ function jwksServe() {
     if (url.pathname === '/auth/v1/.well-known/jwks.json') {
       return res.writeHead(200, { 'Content-Type': 'application/json' }).end(jwks);
     }
-    const m = url.pathname.match(/^\/storage\/v1\/object\/(sign\/)?([^/]+)\/(.+)$/);
+    const m = url.pathname.match(/^\/storage\/v1\/object\/(sign\/|upload\/sign\/|authenticated\/)?([^/]+)\/(.+)$/);
     if (!m) return res.writeHead(404).end();
-    const [, sign, bucket, objectPath] = m;
+    const [, kind = '', bucket, objectPath] = m;
+    const sign = kind === 'sign/';
+    const q = (v) => `'${v}'`;
     if (!SAFE.test(bucket) || !SAFE.test(objectPath) || objectPath.includes('..')) {
       return json(res, 400, { statusCode: '400', error: 'InvalidKey', message: 'Invalid key' });
     }
@@ -422,6 +440,23 @@ function jwksServe() {
       return res.writeHead(200).end(fs.readFileSync(file));
     }
 
+    // Signed upload (what the browser does): no auth headers, just the token.
+    // Like Supabase, the object is inserted as the user who signed the URL.
+    if (kind === 'upload/sign/' && req.method === 'PUT') {
+      const grant = uploadTokens.get(url.searchParams.get('token'));
+      if (grant?.key !== `${bucket}/${objectPath}`) {
+        return json(res, 400, { statusCode: '400', error: 'InvalidSignature', message: 'Invalid signature' });
+      }
+      uploadTokens.delete(url.searchParams.get('token'));
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const r = psqlAsUser(grant.sub, `insert into storage.objects (bucket_id, name, owner) values (${q(bucket)}, ${q(objectPath)}, ${q(grant.sub)});`);
+      if (!r.ok) return json(res, 400, { statusCode: '409', error: 'Duplicate', message: 'The resource already exists' });
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, Buffer.concat(chunks));
+      return json(res, 200, { Key: `${bucket}/${objectPath}` });
+    }
+
     if (!req.headers.apikey) return json(res, 401, { message: 'No API key found in request' });
     let sub;
     try {
@@ -431,9 +466,24 @@ function jwksServe() {
 
     const chunks = [];
     for await (const c of req) chunks.push(c);
-    const q = (v) => `'${v}'`;
 
-    if (!sign && req.method === 'POST') {
+    // Signing an upload checks the insert policy up front (then rolls back).
+    if (kind === 'upload/sign/' && req.method === 'POST') {
+      const r = psqlAsUser(sub, `insert into storage.objects (bucket_id, name, owner) values (${q(bucket)}, ${q(objectPath)}, ${q(sub)}); rollback;`);
+      if (!r.ok) return json(res, 400, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' });
+      const token = crypto.randomUUID();
+      uploadTokens.set(token, { key: `${bucket}/${objectPath}`, sub });
+      return json(res, 200, { url: `/object/upload/sign/${bucket}/${objectPath}?token=${token}` });
+    }
+    if (kind === 'authenticated/' && req.method === 'GET') {
+      const r = psqlAsUser(sub, `select count(*) from storage.objects where bucket_id = ${q(bucket)} and name = ${q(objectPath)};`);
+      if (!r.ok || !r.out.split('\n').includes('1') || !fs.existsSync(file)) {
+        return json(res, 400, { statusCode: '404', error: 'not_found', message: 'Object not found' });
+      }
+      return res.writeHead(200).end(fs.readFileSync(file));
+    }
+
+    if (!kind && req.method === 'POST') {
       const r = psqlAsUser(sub, `insert into storage.objects (bucket_id, name, owner) values (${q(bucket)}, ${q(objectPath)}, ${q(sub)});`);
       if (!r.ok) {
         return r.err.includes('duplicate key')
@@ -453,7 +503,7 @@ function jwksServe() {
       signedTokens.set(token, `${bucket}/${objectPath}`);
       return json(res, 200, { signedURL: `/object/sign/${bucket}/${objectPath}?token=${token}` });
     }
-    if (!sign && req.method === 'DELETE') {
+    if (!kind && req.method === 'DELETE') {
       psqlAsUser(sub, `delete from storage.objects where bucket_id = ${q(bucket)} and name = ${q(objectPath)};`);
       fs.rmSync(file, { force: true });
       return json(res, 200, { message: 'Successfully deleted' });

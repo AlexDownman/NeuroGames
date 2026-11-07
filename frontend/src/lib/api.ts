@@ -5,6 +5,8 @@ import { supabase } from './supabaseClient'
 // token, 403 for students). Students never call it — gameplay goes through
 // Supabase RPCs instead.
 
+// On Vercel the backend is served from the same origin under /api (see
+// /vercel.json), so VITE_API_URL is "/" there, which strips to "".
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/$/, '')
 
 export class ApiError extends Error {
@@ -26,9 +28,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${session.access_token}`)
-  // FormData needs the browser to set its own multipart boundary — forcing
-  // JSON here would break file uploads.
-  if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+  if (init.body !== undefined && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
 
@@ -95,12 +95,38 @@ export const getMaterialDownloadUrl = (collectionId: string, materialId: string)
     `/api/collections/${collectionId}/materials/${materialId}/download-url`,
   )
 
-export function uploadMaterial(collectionId: string, file: File) {
-  const formData = new FormData()
-  formData.append('file', file)
+// The file goes straight from the browser to Supabase Storage via a one-time
+// signed URL, then the backend reads it back to extract text. Bytes never pass
+// through the API, whose request bodies Vercel caps at 4.5 MB.
+export async function uploadMaterial(collectionId: string, file: File) {
+  const { uploadUrl, storagePath } = await apiFetch<{ uploadUrl: string; storagePath: string }>(
+    `/api/collections/${collectionId}/materials/upload-url`,
+    { method: 'POST', body: JSON.stringify({ filename: file.name }) },
+  )
+
+  let response: Response
+  try {
+    response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'false' },
+      body: file,
+    })
+  } catch {
+    throw new ApiError(0, "Couldn't reach file storage. Check your connection and try again.")
+  }
+  if (!response.ok) {
+    // Storage may answer 400 with the real code ("413") in the JSON body.
+    const body = await response.json().catch(() => undefined)
+    const tooLarge = response.status === 413 || body?.statusCode === '413'
+    throw new ApiError(
+      response.status,
+      tooLarge ? 'That file is too large — the limit is 25 MB.' : `File upload failed (${response.status})`,
+    )
+  }
+
   return apiFetch<LearningMaterial>(`/api/collections/${collectionId}/materials`, {
     method: 'POST',
-    body: formData,
+    body: JSON.stringify({ storagePath, filename: file.name }),
   })
 }
 
