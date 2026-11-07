@@ -36,7 +36,7 @@ Plain `./mvnw` does the same (`defaultGoal` is `package`). The driver runs the
 D=.claude/skills/run-neurogames-backend/driver.mjs
 node $D up              # ~20s: Postgres :54322, JWKS :54399, backend :8080
 node $D smoke           # 18 HTTP checks (auth, CRUD, error statuses); exit 1 on failure
-node $D smoke-db        # 20 gameplay RPC + RLS checks, in a rolled-back transaction
+node $D smoke-db        # 29 gameplay RPC, leaderboard + RLS checks, in a rolled-back transaction
 node $D down            # stop backend + JWKS, delete the DB container
 ```
 

@@ -3,6 +3,7 @@ import { Link, Navigate } from 'react-router-dom'
 import { listCollections, type Collection } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabaseClient'
+import Logo from '../components/Logo'
 
 export default function DashboardPage() {
   const { session, loading, isTeacher } = useAuth()
@@ -23,9 +24,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-ink text-porcelain">
       <header className="flex items-center justify-between px-6 py-5 md:px-12">
         <Link to="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-baltic text-sm font-extrabold">
-            N
-          </span>
+          <Logo className="h-9 w-9" />
           NeuroGames
         </Link>
         <button

@@ -1,7 +1,7 @@
 const GAMES = [
   { title: 'Quiz Battle: OOP Basics', status: 'Live', score: '142 playing' },
   { title: 'Answer Run: SQL Joins', status: 'Draft', score: '—' },
-  { title: 'Match-Up: Networking', status: 'Live', score: '87 playing' },
+  { title: 'Quiz Battle: Networking', status: 'Live', score: '87 playing' },
 ]
 
 const LEADERBOARD = [

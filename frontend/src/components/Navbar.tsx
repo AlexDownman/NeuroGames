@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import Logo from './Logo'
 
 const LINKS = [
   { label: 'How it works', href: '#how-it-works' },
@@ -13,9 +14,7 @@ export default function Navbar() {
   return (
     <header className="relative z-10 flex items-center justify-between px-6 py-5 md:px-12">
       <Link to="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-porcelain">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-baltic text-sm font-extrabold text-porcelain">
-          N
-        </span>
+        <Logo className="h-9 w-9" />
         NeuroGames
       </Link>
 

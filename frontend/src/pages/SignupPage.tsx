@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, type AccountRole } from '../lib/supabaseClient'
+import Logo from '../components/Logo'
 
 const ROLES: Array<{
   id: AccountRole
@@ -119,9 +120,7 @@ export default function SignupPage() {
     <div className="flex min-h-screen flex-col bg-ink text-porcelain">
       <header className="px-6 py-5 md:px-12">
         <Link to="/" className="flex w-fit items-center gap-2 text-lg font-bold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-baltic text-sm font-extrabold">
-            N
-          </span>
+          <Logo className="h-9 w-9" />
           NeuroGames
         </Link>
       </header>
@@ -131,11 +130,25 @@ export default function SignupPage() {
           {status === 'success' ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center">
               <p className="text-2xl">✅</p>
-              <h1 className="mt-3 text-xl font-bold">You're in, {displayName}!</h1>
-              <p className="mt-2 text-sm text-porcelain/60">
-                You've joined session <span className="text-porcelain">{sessionCode.toUpperCase()}</span>.
-                The game view is coming soon — for now, ask your teacher what's next.
-              </p>
+              {/* Teachers only land here when email confirmation is on (otherwise
+                  handleTeacherSubmit goes straight to the dashboard). */}
+              {role === 'teacher' ? (
+                <>
+                  <h1 className="mt-3 text-xl font-bold">Check your email</h1>
+                  <p className="mt-2 text-sm text-porcelain/60">
+                    We sent a confirmation link to <span className="text-porcelain">{email}</span>.
+                    Follow it to finish setting up your teacher account.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 className="mt-3 text-xl font-bold">You're in, {displayName}!</h1>
+                  <p className="mt-2 text-sm text-porcelain/60">
+                    You've joined session <span className="text-porcelain">{sessionCode.toUpperCase()}</span>.
+                    The game view is coming soon — for now, ask your teacher what's next.
+                  </p>
+                </>
+              )}
               <Link
                 to="/"
                 className="mt-6 inline-block rounded-lg bg-baltic px-5 py-2.5 text-sm font-semibold hover:bg-baltic-light"

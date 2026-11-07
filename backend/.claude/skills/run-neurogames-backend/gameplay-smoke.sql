@@ -7,7 +7,7 @@ declare
   v_lect uuid := gen_random_uuid(); v_stud uuid := gen_random_uuid(); v_other uuid := gen_random_uuid();
   v_coll uuid; v_q1 uuid; v_q2 uuid; v_a1 uuid; v_a2 uuid; v_a3 uuid;
   v_game uuid; v_sess uuid; v_p uuid; v_p2 uuid;
-  v_n int; v_b boolean; v_j int; v_t text;
+  v_n int; v_b boolean; v_j int; v_t text; v_out uuid := gen_random_uuid(); v_p3 uuid;
 begin
   -- signup trigger
   insert into auth.users (id, is_anonymous) values (v_stud, true), (v_other, true);
@@ -95,6 +95,50 @@ begin
   raise notice '% final score is 10 (got %)', case when v_n = 10 then 'PASS' else 'FAIL' end, v_n;
   select display_name into v_t from public.session_participants where id = v_p;
   raise notice '% display name stored trimmed (got "%")', case when v_t = 'Sam again' then 'PASS' else 'FAIL' end, v_t;
+
+  -- leaderboards: a second student joins and answers wrong
+  perform set_config('request.jwt.claims', json_build_object('sub', v_other, 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+  select participant_id into v_p3 from public.join_game_session('SMOKE-' || v_game, 'Bo');
+  perform public.submit_answer(v_p3, v_q1, v_a2, 1500);
+
+  perform set_config('request.jwt.claims', json_build_object('sub', v_stud, 'role', 'authenticated')::text, true);
+  select count(*), max(display_name) filter (where rank = 1), max(score) filter (where rank = 1), bool_or(is_me and rank = 1)
+    into v_n, v_t, v_j, v_b from public.get_session_leaderboard(v_sess);
+  raise notice '% session leaderboard for a player: 2 rows, "Sam again" first with 10, flagged is_me (got %/%/%/%)',
+    case when v_n = 2 and v_t = 'Sam again' and v_j = 10 and v_b then 'PASS' else 'FAIL' end, v_n, v_t, v_j, v_b;
+  select count(*) into v_n from public.get_session_leaderboard(v_sess) where display_name = 'Bo' and rank = 2 and correct_answers = 0 and questions_answered = 1 and total_time_ms = 1500;
+  raise notice '% second place has 0 correct, 1 answered, 1500 ms', case when v_n = 1 then 'PASS' else 'FAIL' end;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', v_lect, 'role', 'authenticated')::text, true);
+  select count(*), bool_or(is_me) into v_n, v_b from public.get_session_leaderboard(v_sess);
+  raise notice '% owning lecturer sees the session leaderboard (% rows, any is_me=%)', case when v_n = 2 and not v_b then 'PASS' else 'FAIL' end, v_n, v_b;
+  select count(*) into v_n from public.get_game_leaderboard(v_game);
+  raise notice '% game leaderboard for the lecturer: 2 entries (got %)', case when v_n = 2 then 'PASS' else 'FAIL' end, v_n;
+  select count(*) into v_n from public.get_game_leaderboard(v_game, 1);
+  raise notice '% game leaderboard respects the limit (got %)', case when v_n = 1 then 'PASS' else 'FAIL' end, v_n;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', v_other, 'role', 'authenticated')::text, true);
+  select count(*) into v_n from public.get_game_leaderboard(v_game);
+  raise notice '% a student who played sees the game leaderboard (got %)', case when v_n = 2 then 'PASS' else 'FAIL' end, v_n;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', v_out, 'role', 'authenticated')::text, true);
+  begin
+    perform public.get_session_leaderboard(v_sess);
+    raise notice 'FAIL outsider read the session leaderboard';
+  exception when raise_exception then raise notice 'PASS outsider cannot read the session leaderboard'; end;
+  begin
+    perform public.get_game_leaderboard(v_game);
+    raise notice 'FAIL outsider read the game leaderboard';
+  exception when raise_exception then raise notice 'PASS outsider cannot read the game leaderboard'; end;
+
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('role', 'anon', true);
+  begin
+    perform public.get_session_leaderboard(v_sess);
+    raise notice 'FAIL anon role could call get_session_leaderboard';
+  exception when insufficient_privilege then raise notice 'PASS anon role cannot call the leaderboards'; end;
+  perform set_config('role', 'postgres', true);
 
   update public.game_sessions set status = 'ended' where id = v_sess;
   perform set_config('request.jwt.claims', json_build_object('sub', v_stud, 'role', 'authenticated')::text, true);
