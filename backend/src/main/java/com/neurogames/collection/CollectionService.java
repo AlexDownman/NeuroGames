@@ -33,7 +33,7 @@ public class CollectionService {
         collection.setOwnerId(ownerId);
         collection.setName(request.name());
         collection.setDescription(request.description());
-        collection.setPublicCollection(request.publicCollection());
+        collection.setPublicCollection(request.isPublic());
 
         return CollectionResponse.from(collectionRepository.save(collection));
     }
@@ -43,7 +43,7 @@ public class CollectionService {
 
         collection.setName(request.name());
         collection.setDescription(request.description());
-        collection.setPublicCollection(request.publicCollection());
+        collection.setPublicCollection(request.isPublic());
 
         return CollectionResponse.from(collectionRepository.save(collection));
     }

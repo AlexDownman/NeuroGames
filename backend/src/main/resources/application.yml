@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: neurogames-backend
+  # Connects as the postgres role, which BYPASSES the RLS policies in
+  # database/schema.sql — those protect direct Supabase client access, not
+  # this backend. Every service here must scope queries to the caller's own
+  # lecturer id itself (e.g. CollectionRepository.findByIdAndOwnerId).
   datasource:
     url: jdbc:postgresql://${SUPABASE_DB_HOST}:${SUPABASE_DB_PORT:5432}/${SUPABASE_DB_NAME:postgres}?sslmode=require
     username: ${SUPABASE_DB_USER:postgres}
@@ -20,9 +24,15 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  security:
+    oauth2:
+      resourceserver:
+        # Verifies tokens Supabase Auth already issued — this backend never
+        # signs its own. Supabase signs with asymmetric keys (ES256, or RS256
+        # after a key rotation) published at the JWKS endpoint below.
+        jwt:
+          issuer-uri: ${SUPABASE_URL}/auth/v1
+          jwk-set-uri: ${SUPABASE_URL}/auth/v1/.well-known/jwks.json
+          jws-algorithms: ES256, RS256
+          audiences: authenticated
 
-app:
-  supabase:
-    # Settings -> API -> JWT Secret in the Supabase dashboard. Used only to
-    # verify tokens Supabase already issued — this backend never signs its own.
-    jwt-secret: ${SUPABASE_JWT_SECRET}

@@ -6,12 +6,13 @@ AI-powered platform for lecturers to turn their teaching materials into playable
 
 - **Backend** — Java 25 / Spring Boot 4, in [`backend/`](backend). REST API over collections, questions and games.
 - **Database** — Supabase (Postgres). Schema, RLS policies and gameplay RPCs live in [`database/schema.sql`](database/schema.sql).
-- **Auth** — Supabase Auth owns lecturer identity. The backend never issues its own tokens; it verifies the Supabase-issued JWT on every request (see `backend/src/main/java/com/neurogames/auth`).
+- **Auth** — Supabase Auth owns identity. The backend never issues its own tokens; it verifies the Supabase-issued JWT against the project's JWKS on every request, and only accepts callers who have a `lecturers` row (see `backend/src/main/java/com/neurogames/auth`). Students play via Supabase anonymous sign-ins and the gameplay RPCs in the schema, not through this backend.
 - **Frontend** — not scaffolded yet (React + TypeScript planned).
 
 ## Running the backend locally
 
-1. Create a Supabase project, then run [`database/schema.sql`](database/schema.sql) once in its SQL Editor.
+1. Create a Supabase project, then run [`database/schema.sql`](database/schema.sql) once in its SQL Editor. Enable **Anonymous Sign-Ins** (Authentication -> Sign In / Providers) so students can join games.
+   - A project created from an older `schema.sql` instead needs the files in [`database/migrations/`](database/migrations), in order.
 2. Copy `backend/.env.example` to `backend/.env` (or export the same variables) with values from the Supabase dashboard (Project Settings -> Database / API).
 3. From `backend/`:
 

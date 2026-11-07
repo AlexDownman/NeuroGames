@@ -1,25 +1,22 @@
 package com.neurogames.config;
 
-import com.neurogames.auth.JwtAuthenticationFilter;
+import com.neurogames.auth.LecturerAuthenticationConverter;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Lecturer credentials are owned entirely by Supabase Auth. This backend
- * never checks a password — it only verifies a Supabase-issued JWT
- * (see JwtAuthenticationFilter) and trusts its "sub" claim as the caller's
- * lecturer id.
+ * never checks a password — it only verifies a Supabase-issued JWT against
+ * the project's JWKS (spring.security.oauth2 in application.yml), then
+ * LecturerAuthenticationConverter confirms the "sub" claim is a lecturer.
  */
 @Configuration
 @EnableWebSecurity
@@ -27,14 +24,14 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+            HttpSecurity http, LecturerAuthenticationConverter lecturerAuthenticationConverter) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-                .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(lecturerAuthenticationConverter)));
 
         return http.build();
     }

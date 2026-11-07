@@ -7,38 +7,42 @@
 -- Design decisions baked into this script:
 --
 --   1. Lecturer identity = Supabase Auth. `public.lecturers.id` is a 1:1
---      extension of `auth.users.id`. A trigger copies new signups into
---      `public.lecturers`. This is required for the RLS policies below,
---      which key everything off `auth.uid()`.
---      => Consequence: the Spring Boot backend's own password/JWT issuing
---         (AuthController/JwtService/Lecturer.passwordHash) needs to be
---         replaced with "verify the Supabase-issued JWT" instead of minting
---         its own, and lecturer registration/login should go through the
---         Supabase Auth API (or GoTrue) rather than POST /api/auth/register.
---         Not done in this script — flagging it as the next required change.
+--      extension of `auth.users.id`. A trigger copies new *email* signups
+--      into `public.lecturers`; anonymous sign-ins (students) are skipped,
+--      so "has a lecturers row" is what makes a Supabase user a lecturer.
+--      The Spring Boot backend never issues tokens — it verifies the
+--      Supabase-issued JWT and requires that lecturers row to exist.
 --
 --   2. Every table has RLS enabled. Ownership is resolved by walking
 --      collection -> lecturer (or game -> collection -> lecturer) via three
 --      small SECURITY DEFINER helper functions, instead of repeating the
---      same join in every policy.
+--      same join in every policy. Helpers live in the `private` schema,
+--      which PostgREST does not expose, so they aren't callable as RPCs.
 --
---   3. Students never get row-level SELECT access to `answer_options`
---      (that would leak `is_correct` to anyone who inspects network
---      traffic). Gameplay reads go through the `answer_options_for_play`
---      view (text only, scoped to the caller's own active session), and
---      gameplay writes go through two RPCs — `join_game_session` and
---      `submit_answer` — so scoring/session-joining logic is enforced
---      server-side, not trusted to the client. This mirrors principle 4
+--   3. Students never get row-level SELECT access to `questions` or
+--      `answer_options` (the latter would leak `is_correct` to anyone who
+--      inspects network traffic). Gameplay goes through three RPCs —
+--      `join_game_session`, `get_session_questions` (question + answer
+--      text only, for the caller's own active session) and `submit_answer`
+--      — so session-joining and scoring are enforced server-side, not
+--      trusted to the client. This mirrors principle 4
 --      in the project spec ("AI is a content-generation tool; normal
 --      gameplay should rely on stored data and deterministic application
 --      logic").
 --
---   4. `student_auth_id` is nullable throughout. NULL = fully anonymous
---      participant (no Supabase session at all); non-null = a Supabase
---      Auth user (including anonymous sign-ins, which still get a stable
---      uuid). Both modes the spec asked to keep open are supported.
+--   4. Students must hold a Supabase session to play — normally an
+--      anonymous sign-in (no account, but a stable uuid), so "Anonymous
+--      Sign-Ins" must be enabled in the Auth settings. The gameplay RPCs
+--      reject callers with no session: a participant with no auth id has
+--      nothing to prove ownership with, so anyone could answer as them.
+--      `student_auth_id` stays nullable only so deleting an auth user
+--      keeps that participant's results (on delete set null).
 --
---   5. Scoring in `submit_answer` is a flat +10 placeholder — swap for
+--   5. A participant may answer each question once (unique constraint on
+--      student_answers), and only for questions in their own game while
+--      the session is active.
+--
+--   6. Scoring in `submit_answer` is a flat +10 placeholder — swap for
 --      real per-game-type scoring rules once those are designed.
 -- =============================================================================
 
@@ -48,6 +52,10 @@
 -- -----------------------------------------------------------------------------
 create extension if not exists pgcrypto;
 
+-- Not in PostgREST's exposed schemas, so nothing here is callable via /rpc.
+create schema if not exists private;
+grant usage on schema private to anon, authenticated;
+
 
 -- -----------------------------------------------------------------------------
 -- 1. Shared trigger: keep updated_at current
@@ -55,6 +63,7 @@ create extension if not exists pgcrypto;
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   new.updated_at = now();
@@ -208,7 +217,10 @@ create table public.student_answers (
   submitted_at        timestamptz not null default now()
 );
 
-create index student_answers_participant_id_idx on public.student_answers (participant_id);
+-- One answer per participant per question (blocks re-submitting for points).
+-- Also serves as the participant_id index.
+alter table public.student_answers
+  add constraint student_answers_participant_question_key unique (participant_id, question_id);
 create index student_answers_question_id_idx on public.student_answers (question_id);
 
 
@@ -228,28 +240,36 @@ create trigger games_set_updated_at before update on public.games
 -- -----------------------------------------------------------------------------
 -- 4. New Supabase Auth user -> lecturer profile row
 -- -----------------------------------------------------------------------------
-create or replace function public.handle_new_lecturer()
+-- Anonymous sign-ins are students, not lecturers — and have no email, which
+-- lecturers.email requires, so inserting them would fail the whole signup.
+create or replace function private.handle_new_lecturer()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
+  if coalesce(new.is_anonymous, false) or new.email is null then
+    return new;
+  end if;
+
   insert into public.lecturers (id, email, full_name)
   values (new.id, new.email, coalesce(new.raw_user_meta_data ->> 'full_name', ''));
   return new;
 end;
 $$;
 
+revoke execute on function private.handle_new_lecturer() from public, anon, authenticated;
+
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute function public.handle_new_lecturer();
+  for each row execute function private.handle_new_lecturer();
 
 
 -- -----------------------------------------------------------------------------
 -- 5. Ownership helper functions (used by RLS policies below)
 -- -----------------------------------------------------------------------------
-create or replace function public.owns_collection(target_collection_id uuid)
+create or replace function private.owns_collection(target_collection_id uuid)
 returns boolean
 language sql
 security definer
@@ -263,7 +283,7 @@ as $$
   );
 $$;
 
-create or replace function public.owns_question(target_question_id uuid)
+create or replace function private.owns_question(target_question_id uuid)
 returns boolean
 language sql
 security definer
@@ -273,11 +293,11 @@ as $$
   select exists (
     select 1 from public.questions q
     where q.id = target_question_id
-      and public.owns_collection(q.collection_id)
+      and private.owns_collection(q.collection_id)
   );
 $$;
 
-create or replace function public.owns_game(target_game_id uuid)
+create or replace function private.owns_game(target_game_id uuid)
 returns boolean
 language sql
 security definer
@@ -287,9 +307,18 @@ as $$
   select exists (
     select 1 from public.games g
     where g.id = target_game_id
-      and public.owns_collection(g.collection_id)
+      and private.owns_collection(g.collection_id)
   );
 $$;
+
+-- RLS policies run these as the querying role, so it needs EXECUTE
+-- (anon too: games_select_owner_or_public is evaluated for anon reads).
+revoke execute on function private.owns_collection(uuid) from public;
+revoke execute on function private.owns_question(uuid) from public;
+revoke execute on function private.owns_game(uuid) from public;
+grant execute on function private.owns_collection(uuid) to anon, authenticated;
+grant execute on function private.owns_question(uuid) to anon, authenticated;
+grant execute on function private.owns_game(uuid) to anon, authenticated;
 
 
 -- -----------------------------------------------------------------------------
@@ -329,46 +358,46 @@ create policy "collections_delete_owner" on public.collections
 
 -- learning_materials: lecturer-only (never exposed to students directly).
 create policy "materials_all_owner" on public.learning_materials
-  for all using (public.owns_collection(collection_id))
-  with check (public.owns_collection(collection_id));
+  for all using (private.owns_collection(collection_id))
+  with check (private.owns_collection(collection_id));
 
 -- topics: lecturer-only.
 create policy "topics_all_owner" on public.topics
-  for all using (public.owns_collection(collection_id))
-  with check (public.owns_collection(collection_id));
+  for all using (private.owns_collection(collection_id))
+  with check (private.owns_collection(collection_id));
 
--- questions: lecturer-only. Students get question text during play via the
--- game_questions + answer_options_for_play path, not by reading this table.
+-- questions: lecturer-only. Students get question text during play via
+-- get_session_questions(), not by reading this table.
 create policy "questions_all_owner" on public.questions
-  for all using (public.owns_collection(collection_id))
-  with check (public.owns_collection(collection_id));
+  for all using (private.owns_collection(collection_id))
+  with check (private.owns_collection(collection_id));
 
 -- answer_options: lecturer-only — this is the table with is_correct on it.
 create policy "answer_options_all_owner" on public.answer_options
-  for all using (public.owns_question(question_id))
-  with check (public.owns_question(question_id));
+  for all using (private.owns_question(question_id))
+  with check (private.owns_question(question_id));
 
 -- games: full CRUD for the owner; read-only for anyone if the collection is public.
 create policy "games_select_owner_or_public" on public.games
   for select using (
-    public.owns_collection(collection_id)
+    private.owns_collection(collection_id)
     or exists (select 1 from public.collections c where c.id = games.collection_id and c.is_public)
   );
 
 create policy "games_insert_owner" on public.games
-  for insert with check (public.owns_collection(collection_id));
+  for insert with check (private.owns_collection(collection_id));
 
 create policy "games_update_owner" on public.games
-  for update using (public.owns_collection(collection_id)) with check (public.owns_collection(collection_id));
+  for update using (private.owns_collection(collection_id)) with check (private.owns_collection(collection_id));
 
 create policy "games_delete_owner" on public.games
-  for delete using (public.owns_collection(collection_id));
+  for delete using (private.owns_collection(collection_id));
 
 -- game_questions: lecturer manages it; a participant in an active session for
--- that game can read the question order (not the answers — see the view below).
+-- that game can read the question order (not the answers — see get_session_questions).
 create policy "game_questions_select_owner_or_active_participant" on public.game_questions
   for select using (
-    public.owns_game(game_id)
+    private.owns_game(game_id)
     or exists (
       select 1 from public.game_sessions gs
       join public.session_participants sp on sp.session_id = gs.id
@@ -379,13 +408,13 @@ create policy "game_questions_select_owner_or_active_participant" on public.game
   );
 
 create policy "game_questions_write_owner" on public.game_questions
-  for insert with check (public.owns_game(game_id));
+  for insert with check (private.owns_game(game_id));
 
 create policy "game_questions_update_owner" on public.game_questions
-  for update using (public.owns_game(game_id)) with check (public.owns_game(game_id));
+  for update using (private.owns_game(game_id)) with check (private.owns_game(game_id));
 
 create policy "game_questions_delete_owner" on public.game_questions
-  for delete using (public.owns_game(game_id));
+  for delete using (private.owns_game(game_id));
 
 -- game_sessions: the owning lecturer has full CRUD. A joined participant can
 -- see their own session's status/code (e.g. to poll for 'active' -> 'ended').
@@ -393,7 +422,7 @@ create policy "game_questions_delete_owner" on public.game_questions
 -- code happens through join_game_session() below, not a table scan.
 create policy "sessions_select_owner_or_participant" on public.game_sessions
   for select using (
-    public.owns_game(game_id)
+    private.owns_game(game_id)
     or exists (
       select 1 from public.session_participants sp
       where sp.session_id = game_sessions.id
@@ -402,13 +431,13 @@ create policy "sessions_select_owner_or_participant" on public.game_sessions
   );
 
 create policy "sessions_insert_owner" on public.game_sessions
-  for insert with check (public.owns_game(game_id));
+  for insert with check (private.owns_game(game_id));
 
 create policy "sessions_update_owner" on public.game_sessions
-  for update using (public.owns_game(game_id)) with check (public.owns_game(game_id));
+  for update using (private.owns_game(game_id)) with check (private.owns_game(game_id));
 
 create policy "sessions_delete_owner" on public.game_sessions
-  for delete using (public.owns_game(game_id));
+  for delete using (private.owns_game(game_id));
 
 -- session_participants: a student can see their own row; the lecturer who
 -- owns the game can see all participants (for live results/analytics).
@@ -421,7 +450,7 @@ create policy "participants_select_self_or_lecturer" on public.session_participa
     or exists (
       select 1 from public.game_sessions gs
       where gs.id = session_participants.session_id
-        and public.owns_game(gs.game_id)
+        and private.owns_game(gs.game_id)
     )
   );
 
@@ -438,44 +467,37 @@ create policy "answers_select_self_or_lecturer" on public.student_answers
       select 1 from public.session_participants sp
       join public.game_sessions gs on gs.id = sp.session_id
       where sp.id = student_answers.participant_id
-        and public.owns_game(gs.game_id)
+        and private.owns_game(gs.game_id)
     )
   );
 
 
 -- -----------------------------------------------------------------------------
--- 7. Gameplay read path: answer text without is_correct, scoped to the
---    caller's own active session.
+-- 7. Gameplay RPCs: join a session by code, read its questions, submit an
+--    answer. All are SECURITY DEFINER, so they run as the table owner and
+--    bypass the RLS policies above by design — this is where the actual
+--    trust boundary for "did this student really answer this correctly"
+--    lives. Each one requires a Supabase session (auth.uid() not null); see
+--    design note 4 at the top.
 -- -----------------------------------------------------------------------------
-create view public.answer_options_for_play as
-select ao.id, ao.question_id, ao.answer_text
-from public.answer_options ao
-join public.questions q on q.id = ao.question_id
-join public.game_questions gq on gq.question_id = q.id
-join public.game_sessions gs on gs.game_id = gq.game_id
-join public.session_participants sp on sp.session_id = gs.id
-where gs.status = 'active'
-  and sp.student_auth_id = auth.uid();
 
-grant select on public.answer_options_for_play to anon, authenticated;
-
-
--- -----------------------------------------------------------------------------
--- 8. Gameplay write path: join a session by code, submit an answer.
---    Both are SECURITY DEFINER, so they run as the table owner and bypass
---    the RLS policies above by design — this is where the actual trust
---    boundary for "did this student really answer this correctly" lives.
--- -----------------------------------------------------------------------------
+-- Re-joining with the same session (e.g. after a page refresh) returns the
+-- existing participant instead of failing on the unique index.
 create or replace function public.join_game_session(p_session_code text, p_display_name text)
 returns table (participant_id uuid, session_id uuid, game_id uuid)
 language plpgsql
 security definer
 set search_path = public
 as $$
+#variable_conflict use_column
 declare
   v_session public.game_sessions;
   v_participant_id uuid;
 begin
+  if auth.uid() is null then
+    raise exception 'Sign in (anonymous sign-in is fine) before joining a session';
+  end if;
+
   select * into v_session
   from public.game_sessions
   where session_code = p_session_code
@@ -487,13 +509,59 @@ begin
 
   insert into public.session_participants (session_id, student_auth_id, display_name)
   values (v_session.id, auth.uid(), p_display_name)
+  on conflict (session_id, student_auth_id) where student_auth_id is not null
+    do update set display_name = excluded.display_name
   returning id into v_participant_id;
 
   return query select v_participant_id, v_session.id, v_session.game_id;
 end;
 $$;
 
-grant execute on function public.join_game_session(text, text) to anon, authenticated;
+-- Question and answer text for the caller's own active session. Never
+-- returns is_correct; the explanation is only revealed by submit_answer.
+create or replace function public.get_session_questions(p_session_id uuid)
+returns table (
+  question_id    uuid,
+  display_order  integer,
+  question_text  text,
+  difficulty     text,
+  answer_options jsonb
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null or not exists (
+    select 1
+    from public.session_participants sp
+    join public.game_sessions gs on gs.id = sp.session_id
+    where sp.session_id = p_session_id
+      and sp.student_auth_id = auth.uid()
+      and gs.status = 'active'
+  ) then
+    raise exception 'Caller is not a participant in active session %', p_session_id;
+  end if;
+
+  return query
+  select
+    q.id,
+    gq.display_order,
+    q.question_text,
+    q.difficulty,
+    coalesce(
+      (select jsonb_agg(jsonb_build_object('id', ao.id, 'answer_text', ao.answer_text) order by ao.id)
+       from public.answer_options ao
+       where ao.question_id = q.id),
+      '[]'::jsonb)
+  from public.game_sessions gs
+  join public.game_questions gq on gq.game_id = gs.game_id
+  join public.questions q on q.id = gq.question_id
+  where gs.id = p_session_id
+  order by gq.display_order;
+end;
+$$;
 
 create or replace function public.submit_answer(
   p_participant_id uuid,
@@ -507,17 +575,35 @@ security definer
 set search_path = public
 as $$
 declare
+  v_owner_auth_id uuid;
+  v_game_id uuid;
+  v_session_status text;
   v_is_correct boolean;
   v_explanation text;
-  v_owner_auth_id uuid;
+  v_answer_id uuid;
   v_points constant integer := 10;
 begin
-  select student_auth_id into v_owner_auth_id
-  from public.session_participants
-  where id = p_participant_id;
+  select sp.student_auth_id, gs.game_id, gs.status
+    into v_owner_auth_id, v_game_id, v_session_status
+  from public.session_participants sp
+  join public.game_sessions gs on gs.id = sp.session_id
+  where sp.id = p_participant_id;
 
-  if v_owner_auth_id is distinct from auth.uid() then
+  -- Plain `<>`, not `is distinct from`: a NULL on either side must fail.
+  if auth.uid() is null or v_owner_auth_id is null or v_owner_auth_id <> auth.uid() then
     raise exception 'Participant % does not belong to the current caller', p_participant_id;
+  end if;
+
+  if v_session_status <> 'active' then
+    raise exception 'Session for participant % is not active', p_participant_id;
+  end if;
+
+  if not exists (
+    select 1 from public.game_questions gq
+    where gq.game_id = v_game_id
+      and gq.question_id = p_question_id
+  ) then
+    raise exception 'Question % is not part of this game', p_question_id;
   end if;
 
   select ao.is_correct into v_is_correct
@@ -529,26 +615,39 @@ begin
     raise exception 'Answer option % does not belong to question %', p_selected_answer_id, p_question_id;
   end if;
 
-  select q.explanation into v_explanation
-  from public.questions q
-  where q.id = p_question_id;
-
   insert into public.student_answers (participant_id, question_id, selected_answer_id, is_correct, time_taken_ms)
-  values (p_participant_id, p_question_id, p_selected_answer_id, v_is_correct, p_time_taken_ms);
+  values (p_participant_id, p_question_id, p_selected_answer_id, v_is_correct, p_time_taken_ms)
+  on conflict on constraint student_answers_participant_question_key do nothing
+  returning id into v_answer_id;
+
+  if v_answer_id is null then
+    raise exception 'Question % has already been answered', p_question_id;
+  end if;
 
   if v_is_correct then
     update public.session_participants set score = score + v_points where id = p_participant_id;
   end if;
 
+  select q.explanation into v_explanation
+  from public.questions q
+  where q.id = p_question_id;
+
   return query select v_is_correct, v_explanation;
 end;
 $$;
 
-grant execute on function public.submit_answer(uuid, uuid, uuid, integer) to anon, authenticated;
+-- authenticated only: anonymous sign-ins use the authenticated role; the
+-- anon role (no session at all) can't play — see design note 4.
+revoke execute on function public.join_game_session(text, text) from public, anon;
+revoke execute on function public.get_session_questions(uuid) from public, anon;
+revoke execute on function public.submit_answer(uuid, uuid, uuid, integer) from public, anon;
+grant execute on function public.join_game_session(text, text) to authenticated;
+grant execute on function public.get_session_questions(uuid) to authenticated;
+grant execute on function public.submit_answer(uuid, uuid, uuid, integer) to authenticated;
 
 
 -- -----------------------------------------------------------------------------
--- 9. Baseline table grants (RLS still gates individual rows; this just
+-- 8. Baseline table grants (RLS still gates individual rows; this just
 --    makes the script self-contained if the project's default privileges
 --    don't already extend to anon/authenticated).
 -- -----------------------------------------------------------------------------
