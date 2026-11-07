@@ -22,6 +22,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -48,6 +51,16 @@ class CollectionControllerTest {
     @Test
     void requestWithoutTokenIsUnauthorized() throws Exception {
         mockMvc.perform(get("/api/collections")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void authenticatedNonTeacherIsForbidden() throws Exception {
+        var student = new JwtAuthenticationToken(
+                Jwt.withTokenValue("token").header("alg", "ES256").subject(UUID.randomUUID().toString()).build(),
+                List.of());
+
+        mockMvc.perform(get("/api/collections").with(authentication(student)))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -112,6 +125,7 @@ class CollectionControllerTest {
 
     private static RequestPostProcessor asLecturer() {
         var principal = new LecturerPrincipal(LECTURER_ID, "lecturer@example.com");
-        return authentication(UsernamePasswordAuthenticationToken.authenticated(principal, null, List.of()));
+        return authentication(UsernamePasswordAuthenticationToken.authenticated(
+                principal, null, List.of(new SimpleGrantedAuthority("ROLE_TEACHER"))));
     }
 }

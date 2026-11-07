@@ -242,7 +242,10 @@ async function smoke() {
   let r = await call('GET', '/api/collections', undefined, {});
   check('no token -> 401', r.status === 401, r.status);
   r = await call('GET', '/api/collections', undefined, { token: anonToken().token });
-  check('anonymous student token -> 401', r.status === 401, r.status);
+  check('anonymous student token -> 403 (authenticated, not a teacher)', r.status === 403, r.status);
+  r = await call('GET', '/api/collections', undefined,
+    { token: signJwt({ sub: crypto.randomUUID(), email: 'nobody@example.com', is_anonymous: false }) });
+  check('signed-in user without a lecturers row -> 403', r.status === 403, r.status);
   r = await call('GET', '/api/collections', undefined, { token: lect.token.slice(0, -4) + 'AAAA' });
   check('tampered signature -> 401', r.status === 401, r.status);
 

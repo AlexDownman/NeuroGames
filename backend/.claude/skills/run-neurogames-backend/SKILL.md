@@ -35,7 +35,7 @@ Plain `./mvnw` does the same (`defaultGoal` is `package`). The driver runs the
 ```bash
 D=.claude/skills/run-neurogames-backend/driver.mjs
 node $D up              # ~20s: Postgres :54322, JWKS :54399, backend :8080
-node $D smoke           # 16 HTTP checks (auth, CRUD, error statuses); exit 1 on failure
+node $D smoke           # 18 HTTP checks (auth, CRUD, error statuses); exit 1 on failure
 node $D smoke-db        # 20 gameplay RPC + RLS checks, in a rolled-back transaction
 node $D down            # stop backend + JWKS, delete the DB container
 ```
@@ -45,7 +45,7 @@ Poke it by hand while it's up:
 ```bash
 node $D call POST /api/collections '{"name":"Neuro 101"}'      # as lecturer@example.com
 node $D call GET /api/collections --as someone@example.com     # any email becomes a lecturer
-node $D call GET /api/collections --anon                       # student token -> 401
+node $D call GET /api/collections --anon                       # student token -> 403
 node $D call GET /api/collections --no-auth                    # -> 401
 curl -s -H "Authorization: Bearer $(node $D token)" http://127.0.0.1:8080/api/auth/me
 node $D sql "select email, full_name from public.lecturers"
@@ -86,10 +86,11 @@ Not verified by this skill (it needs the project's DB password).
   succeeds even when another process owns `127.0.0.1:8080`, so the app
   "starts" but requests hit the other process. `up` now refuses if the port
   answers; use `HARNESS_APP_PORT=8091`.
-- **Lecturer = a `public.lecturers` row**, created by the `auth.users` trigger
-  for non-anonymous users with an email. `token EMAIL` inserts into
-  `auth.users` (not `lecturers`) so the real trigger runs. A valid signature
-  alone isn't enough: anonymous or unknown users get 401.
+- **Teacher = a `public.lecturers` row**, created by the `auth.users` trigger
+  for non-anonymous users with an email; only they get `ROLE_TEACHER`, which
+  `/api/**` requires. `token EMAIL` inserts into `auth.users` (not
+  `lecturers`) so the real trigger runs. No/invalid token -> 401; a valid
+  token without the role (anonymous student, unknown user) -> 403.
 - **Tokens must carry `iss = <SUPABASE_URL>/auth/v1` and `aud = authenticated`**
   and be ES256/RS256 — the same checks as production. Hand-made tokens without
   those fail with an empty-body 401; the reason is in the `WWW-Authenticate` header.

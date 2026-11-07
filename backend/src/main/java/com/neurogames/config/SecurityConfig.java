@@ -16,7 +16,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * Lecturer credentials are owned entirely by Supabase Auth. This backend
  * never checks a password — it only verifies a Supabase-issued JWT against
  * the project's JWKS (spring.security.oauth2 in application.yml), then
- * LecturerAuthenticationConverter confirms the "sub" claim is a lecturer.
+ * LecturerAuthenticationConverter grants ROLE_TEACHER if the "sub" claim is a
+ * lecturer. The API is teacher-only: no/invalid token -> 401, valid token
+ * without the role (e.g. a student's anonymous sign-in) -> 403.
  */
 @Configuration
 @EnableWebSecurity
@@ -29,7 +31,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/**").hasRole(LecturerAuthenticationConverter.TEACHER_ROLE)
+                        .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(lecturerAuthenticationConverter)));
 

@@ -6,7 +6,7 @@ AI-powered platform for lecturers to turn their teaching materials into playable
 
 - **Backend** — Java 25 / Spring Boot 4, in [`backend/`](backend). REST API over collections, questions and games.
 - **Database** — Supabase (Postgres). Schema, RLS policies and gameplay RPCs live in [`database/schema.sql`](database/schema.sql).
-- **Auth** — Supabase Auth owns identity. The backend never issues its own tokens; it verifies the Supabase-issued JWT against the project's JWKS on every request, and only accepts callers who have a `lecturers` row (see `backend/src/main/java/com/neurogames/auth`). Students play via Supabase anonymous sign-ins and the gameplay RPCs in the schema, not through this backend.
+- **Auth** — Supabase Auth owns identity. The backend never issues its own tokens; it verifies the Supabase-issued JWT against the project's JWKS on every request, and grants a `TEACHER` role only to callers who have a `lecturers` row (`/api/**` requires it: 401 without a valid token, 403 for students). The frontend sends the teacher's Supabase access token via `frontend/src/lib/api.ts` (see `backend/src/main/java/com/neurogames/auth`). Students play via Supabase anonymous sign-ins and the gameplay RPCs in the schema, not through this backend.
 - **Frontend** — React 19 + TypeScript + Vite, in [`frontend/`](frontend). Talks to Supabase directly (auth, gameplay RPCs); not yet wired to the backend API.
 
 ## Running the backend locally
