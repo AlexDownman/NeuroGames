@@ -51,7 +51,8 @@ public class QuestionGenerationOrchestrator {
         this.answerOptionRepository = answerOptionRepository;
     }
 
-    public List<Question> generate(UUID collectionId, String sourceText, int questionCount, String difficultyHint) {
+    public List<Question> generate(
+            UUID collectionId, String sourceText, UUID sourceMaterialId, int questionCount, String difficultyHint) {
         MaterialAnalysisResult analysis = analysisAgent.analyse(sourceText);
         List<ExtractedTopic> topics = analysis.topics != null ? analysis.topics : List.of();
 
@@ -75,7 +76,7 @@ public class QuestionGenerationOrchestrator {
                 continue;
             }
 
-            saved.add(persist(collectionId, candidate, topicsByName));
+            saved.add(persist(collectionId, sourceMaterialId, candidate, topicsByName));
         }
 
         return saved;
@@ -100,9 +101,11 @@ public class QuestionGenerationOrchestrator {
         return topicsByName;
     }
 
-    private Question persist(UUID collectionId, GeneratedQuestion candidate, Map<String, Topic> topicsByName) {
+    private Question persist(
+            UUID collectionId, UUID sourceMaterialId, GeneratedQuestion candidate, Map<String, Topic> topicsByName) {
         Question question = new Question();
         question.setCollectionId(collectionId);
+        question.setSourceMaterialId(sourceMaterialId);
         Topic topic = topicsByName.get(candidate.topic);
         question.setTopicId(topic != null ? topic.getId() : null);
         question.setQuestionText(candidate.questionText.strip());

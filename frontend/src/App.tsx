@@ -3,6 +3,8 @@ import LandingPage from './pages/LandingPage'
 import SignupPage from './pages/SignupPage'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import CollectionWorkspacePage from './pages/CollectionWorkspacePage'
+import AnswerRunPlayPage from './pages/AnswerRunPlayPage'
 
 function App() {
   return (
@@ -11,6 +13,8 @@ function App() {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/dashboard/collections/:collectionId" element={<CollectionWorkspacePage />} />
+      <Route path="/play/:sessionCode" element={<AnswerRunPlayPage />} />
     </Routes>
   )
 }

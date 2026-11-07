@@ -2,7 +2,12 @@ package com.neurogames.question;
 
 import com.neurogames.ai.QuestionGenerationOrchestrator;
 import com.neurogames.collection.CollectionRepository;
+import com.neurogames.common.exception.InvalidRequestException;
 import com.neurogames.common.exception.ResourceNotFoundException;
+import com.neurogames.material.ExtractionStatus;
+import com.neurogames.material.LearningMaterial;
+import com.neurogames.material.LearningMaterialRepository;
+import com.neurogames.material.MaterialExtractionException;
 import com.neurogames.question.dto.GenerateQuestionsRequest;
 import com.neurogames.question.dto.QuestionResponse;
 import java.util.List;
@@ -19,24 +24,57 @@ public class QuestionService {
     private final CollectionRepository collectionRepository;
     private final QuestionRepository questionRepository;
     private final AnswerOptionRepository answerOptionRepository;
+    private final LearningMaterialRepository materialRepository;
     private final QuestionGenerationOrchestrator orchestrator;
 
     public QuestionService(
             CollectionRepository collectionRepository,
             QuestionRepository questionRepository,
             AnswerOptionRepository answerOptionRepository,
+            LearningMaterialRepository materialRepository,
             QuestionGenerationOrchestrator orchestrator) {
         this.collectionRepository = collectionRepository;
         this.questionRepository = questionRepository;
         this.answerOptionRepository = answerOptionRepository;
+        this.materialRepository = materialRepository;
         this.orchestrator = orchestrator;
     }
 
     public List<QuestionResponse> generate(UUID collectionId, UUID ownerId, GenerateQuestionsRequest request) {
         requireOwnedCollection(collectionId, ownerId);
+
+        String sourceText = resolveSourceText(collectionId, request);
         List<Question> generated = orchestrator.generate(
-                collectionId, request.sourceText(), request.questionCountOrDefault(), request.difficulty());
+                collectionId,
+                sourceText,
+                request.sourceMaterialId(),
+                request.questionCountOrDefault(),
+                request.difficulty());
         return toResponses(generated);
+    }
+
+    private String resolveSourceText(UUID collectionId, GenerateQuestionsRequest request) {
+        boolean hasText = request.sourceText() != null && !request.sourceText().isBlank();
+        boolean hasMaterial = request.sourceMaterialId() != null;
+
+        if (hasText == hasMaterial) {
+            throw new InvalidRequestException("Provide exactly one of sourceText or sourceMaterialId");
+        }
+
+        if (hasText) {
+            return request.sourceText();
+        }
+
+        LearningMaterial material = materialRepository.findByIdAndCollectionId(request.sourceMaterialId(), collectionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Learning material not found"));
+
+        if (material.getExtractionStatus() != ExtractionStatus.COMPLETED
+                || material.getExtractedContent() == null
+                || material.getExtractedContent().isBlank()) {
+            throw new MaterialExtractionException("This material has no extracted text to generate from");
+        }
+
+        return material.getExtractedContent();
     }
 
     public List<QuestionResponse> list(UUID collectionId, UUID ownerId) {

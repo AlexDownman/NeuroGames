@@ -102,18 +102,23 @@ export default function SignupPage() {
       }
     }
 
-    const { error: joinError } = await supabase.rpc('join_game_session', {
-      p_session_code: sessionCode.trim().toUpperCase(),
-      p_display_name: displayName.trim(),
-    })
+    const { data, error: joinError } = await supabase
+      .rpc('join_game_session', {
+        p_session_code: sessionCode.trim().toUpperCase(),
+        p_display_name: displayName.trim(),
+      })
+      .single()
+    const joinData = data as { participant_id: string; session_id: string; game_id: string } | null
 
-    if (joinError) {
+    if (joinError || !joinData) {
       setStatus('error')
-      setErrorMessage(joinError.message)
+      setErrorMessage(joinError?.message ?? 'Could not join that session.')
       return
     }
 
-    setStatus('success')
+    navigate(`/play/${sessionCode.trim().toUpperCase()}`, {
+      state: { participantId: joinData.participant_id, sessionId: joinData.session_id },
+    })
   }
 
   return (
@@ -137,7 +142,8 @@ export default function SignupPage() {
                   <h1 className="mt-3 text-xl font-bold">Check your email</h1>
                   <p className="mt-2 text-sm text-porcelain/60">
                     We sent a confirmation link to <span className="text-porcelain">{email}</span>.
-                    Follow it to finish setting up your teacher account.
+                    Follow it to finish setting up your teacher account, then log in to set up
+                    your first collection.
                   </p>
                 </>
               ) : (

@@ -198,6 +198,9 @@ create table public.session_participants (
   student_auth_id uuid references auth.users (id) on delete set null,
   display_name    text not null,
   score           integer not null default 0,
+  -- Consecutive correct answers, reset to 0 on a wrong one. Lets the client
+  -- show an Answer-Run-style streak/"jackpot" moment without any new RPC.
+  current_streak  integer not null default 0,
   joined_at       timestamptz not null default now()
 );
 
@@ -578,11 +581,12 @@ create or replace function public.submit_answer(
   p_selected_answer_id uuid,
   p_time_taken_ms integer default null
 )
-returns table (is_correct boolean, explanation text)
+returns table (is_correct boolean, explanation text, score integer, current_streak integer)
 language plpgsql
 security definer
 set search_path = public
 as $$
+#variable_conflict use_column
 declare
   v_owner_auth_id uuid;
   v_game_id uuid;
@@ -590,7 +594,12 @@ declare
   v_is_correct boolean;
   v_explanation text;
   v_answer_id uuid;
-  v_points constant integer := 10;
+  -- Answer-Run-style escalating value, from the question's slot in this
+  -- game (GameQuestion.metadata, set when the lecturer builds the game).
+  -- Falls back to a flat 10 for game types that never set it.
+  v_point_value integer;
+  v_score integer;
+  v_current_streak integer;
 begin
   select sp.student_auth_id, gs.game_id, gs.status
     into v_owner_auth_id, v_game_id, v_session_status
@@ -607,21 +616,27 @@ begin
     raise exception 'Session for participant % is not active', p_participant_id;
   end if;
 
-  if not exists (
-    select 1 from public.game_questions gq
-    where gq.game_id = v_game_id
-      and gq.question_id = p_question_id
-  ) then
+  select coalesce((gq.metadata ->> 'pointValue')::integer, 10) into v_point_value
+  from public.game_questions gq
+  where gq.game_id = v_game_id
+    and gq.question_id = p_question_id;
+
+  if v_point_value is null then
     raise exception 'Question % is not part of this game', p_question_id;
   end if;
 
-  select ao.is_correct into v_is_correct
-  from public.answer_options ao
-  where ao.id = p_selected_answer_id
-    and ao.question_id = p_question_id;
+  if p_selected_answer_id is null then
+    -- Ran out of time: counts as wrong, nothing to look up.
+    v_is_correct := false;
+  else
+    select ao.is_correct into v_is_correct
+    from public.answer_options ao
+    where ao.id = p_selected_answer_id
+      and ao.question_id = p_question_id;
 
-  if v_is_correct is null then
-    raise exception 'Answer option % does not belong to question %', p_selected_answer_id, p_question_id;
+    if v_is_correct is null then
+      raise exception 'Answer option % does not belong to question %', p_selected_answer_id, p_question_id;
+    end if;
   end if;
 
   insert into public.student_answers (participant_id, question_id, selected_answer_id, is_correct, time_taken_ms)
@@ -633,15 +648,25 @@ begin
     raise exception 'Question % has already been answered', p_question_id;
   end if;
 
+  -- Bank-style scoring: add on correct, subtract (floored at 0) on wrong —
+  -- no lives, matching the show. Streak resets on any wrong answer.
   if v_is_correct then
-    update public.session_participants set score = score + v_points where id = p_participant_id;
+    update public.session_participants
+    set score = score + v_point_value, current_streak = current_streak + 1
+    where id = p_participant_id
+    returning score, current_streak into v_score, v_current_streak;
+  else
+    update public.session_participants
+    set score = greatest(score - v_point_value, 0), current_streak = 0
+    where id = p_participant_id
+    returning score, current_streak into v_score, v_current_streak;
   end if;
 
   select q.explanation into v_explanation
   from public.questions q
   where q.id = p_question_id;
 
-  return query select v_is_correct, v_explanation;
+  return query select v_is_correct, v_explanation, v_score, v_current_streak;
 end;
 $$;
 

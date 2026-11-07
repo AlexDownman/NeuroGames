@@ -2,10 +2,12 @@ package com.neurogames.question.dto;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
+import java.util.UUID;
 
+/** Exactly one of sourceText / sourceMaterialId must be given — checked in QuestionService, not here. */
 public record GenerateQuestionsRequest(
-        @NotBlank String sourceText,
+        String sourceText,
+        UUID sourceMaterialId,
         @Min(1) @Max(20) Integer questionCount,
         String difficulty) {
 

@@ -26,7 +26,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${session.access_token}`)
-  if (init.body !== undefined && !headers.has('Content-Type')) {
+  // FormData needs the browser to set its own multipart boundary — forcing
+  // JSON here would break file uploads.
+  if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
 
@@ -67,3 +69,92 @@ export interface Collection {
 }
 
 export const listCollections = () => apiFetch<Collection[]>('/api/collections')
+
+export const getCollection = (collectionId: string) => apiFetch<Collection>(`/api/collections/${collectionId}`)
+
+export const createCollection = (body: { name: string; description?: string }) =>
+  apiFetch<Collection>('/api/collections', { method: 'POST', body: JSON.stringify(body) })
+
+export interface LearningMaterial {
+  id: string
+  filename: string
+  fileType: string
+  extractionStatus: 'pending' | 'processing' | 'completed' | 'failed'
+  hasExtractedContent: boolean
+  uploadedAt: string
+}
+
+export const listMaterials = (collectionId: string) =>
+  apiFetch<LearningMaterial[]>(`/api/collections/${collectionId}/materials`)
+
+export function uploadMaterial(collectionId: string, file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiFetch<LearningMaterial>(`/api/collections/${collectionId}/materials`, {
+    method: 'POST',
+    body: formData,
+  })
+}
+
+export interface AnswerOption {
+  id: string
+  text: string
+  correct: boolean
+}
+
+export interface Question {
+  id: string
+  questionText: string
+  explanation: string
+  difficulty: string
+  topicId: string | null
+  approvalStatus: 'pending_review' | 'approved' | 'rejected'
+  answerOptions: AnswerOption[]
+}
+
+export const listQuestions = (collectionId: string) =>
+  apiFetch<Question[]>(`/api/collections/${collectionId}/questions`)
+
+export const generateQuestions = (
+  collectionId: string,
+  body: { sourceText?: string; sourceMaterialId?: string; questionCount?: number; difficulty?: string },
+) =>
+  apiFetch<Question[]>(`/api/collections/${collectionId}/questions/generate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateQuestionApproval = (questionId: string, status: 'approved' | 'rejected') =>
+  apiFetch<Question>(`/api/questions/${questionId}/approval`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+
+export interface Game {
+  id: string
+  title: string
+  description: string | null
+  gameType: string
+  questionCount: number
+  createdAt: string
+}
+
+export const listGames = (collectionId: string) => apiFetch<Game[]>(`/api/collections/${collectionId}/games`)
+
+export const createAnswerRunGame = (collectionId: string, body: { title: string; questionIds: string[] }) =>
+  apiFetch<Game>(`/api/collections/${collectionId}/games`, { method: 'POST', body: JSON.stringify(body) })
+
+export interface GameSession {
+  id: string
+  gameId: string
+  sessionCode: string
+  status: 'pending' | 'active' | 'ended'
+  startedAt: string | null
+  endedAt: string | null
+}
+
+export const startSession = (gameId: string) =>
+  apiFetch<GameSession>(`/api/games/${gameId}/sessions`, { method: 'POST' })
+
+export const endSession = (sessionId: string) =>
+  apiFetch<GameSession>(`/api/sessions/${sessionId}/end`, { method: 'PATCH' })
