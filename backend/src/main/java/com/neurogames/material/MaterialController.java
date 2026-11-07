@@ -2,11 +2,14 @@ package com.neurogames.material;
 
 import com.neurogames.auth.LecturerPrincipal;
 import com.neurogames.material.dto.LearningMaterialResponse;
+import com.neurogames.material.dto.MaterialDownloadResponse;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,14 +30,33 @@ public class MaterialController {
     public ResponseEntity<LearningMaterialResponse> upload(
             @PathVariable UUID collectionId,
             @RequestParam("file") MultipartFile file,
-            @AuthenticationPrincipal LecturerPrincipal principal) {
+            @AuthenticationPrincipal LecturerPrincipal principal,
+            Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(materialService.upload(collectionId, principal.lecturerId(), file));
+                .body(materialService.upload(collectionId, principal.lecturerId(), accessToken(authentication), file));
     }
 
     @GetMapping("/api/collections/{collectionId}/materials")
     public List<LearningMaterialResponse> list(
             @PathVariable UUID collectionId, @AuthenticationPrincipal LecturerPrincipal principal) {
         return materialService.list(collectionId, principal.lecturerId());
+    }
+
+    @GetMapping("/api/collections/{collectionId}/materials/{materialId}/download-url")
+    public MaterialDownloadResponse downloadUrl(
+            @PathVariable UUID collectionId,
+            @PathVariable UUID materialId,
+            @AuthenticationPrincipal LecturerPrincipal principal,
+            Authentication authentication) {
+        return materialService.downloadUrl(collectionId, materialId, principal.lecturerId(), accessToken(authentication));
+    }
+
+    // Storage calls are made as the teacher, so they need the raw token that
+    // LecturerAuthenticationConverter keeps as the Authentication's credentials.
+    private static String accessToken(Authentication authentication) {
+        if (authentication.getCredentials() instanceof Jwt jwt) {
+            return jwt.getTokenValue();
+        }
+        throw new IllegalStateException("Authenticated request has no bearer token");
     }
 }

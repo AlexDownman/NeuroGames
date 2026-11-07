@@ -35,8 +35,8 @@ Plain `./mvnw` does the same (`defaultGoal` is `package`). The driver runs the
 ```bash
 D=.claude/skills/run-neurogames-backend/driver.mjs
 node $D up              # ~20s: Postgres :54322, JWKS :54399, backend :8080
-node $D smoke           # 18 HTTP checks (auth, CRUD, error statuses); exit 1 on failure
-node $D smoke-db        # 29 gameplay RPC, leaderboard + RLS checks, in a rolled-back transaction
+node $D smoke           # HTTP checks: auth, CRUD, file upload + storage, error statuses; exit 1 on failure
+node $D smoke-db        # 61 multiplayer gameplay RPC, summary, leaderboard + RLS checks, in a rolled-back transaction
 node $D down            # stop backend + JWKS, delete the DB container
 ```
 
@@ -98,6 +98,11 @@ Not verified by this skill (it needs the project's DB password).
   raw_user_meta_data, `auth.uid()` reading `request.jwt.claims`). Schema code
   using other Supabase internals (e.g. `auth.jwt()`, `storage.*`) needs the stub
   in `driver.mjs` (`AUTH_STUB_SQL`) extended.
+- **Storage is faked too.** The JWKS server (`SUPABASE_URL`) also serves the
+  Storage API calls the backend makes (upload, sign, signed download, delete),
+  with files on disk under `target/run-harness/storage/`. Each operation runs
+  in Postgres *as the calling user* against a stub `storage.objects`, so the
+  real bucket RLS policies from `schema.sql` decide access.
 - **The backend connects as `postgres`, which bypasses RLS.** HTTP smoke tests
   say nothing about RLS; use `sql-as` / `smoke-db` for that layer.
 - macOS has no `timeout` command; use the driver's own waits.

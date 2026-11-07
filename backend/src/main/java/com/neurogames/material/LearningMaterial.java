@@ -30,9 +30,9 @@ public class LearningMaterial {
     @Column(nullable = false)
     private String filename;
 
-    // No object storage wired up yet — the original file isn't retained,
-    // only its extracted text. This holds the original filename as a
-    // placeholder until real file storage (e.g. Supabase Storage) lands.
+    // Object path in the Collection-Resources bucket:
+    // {collectionId}/{uuid}/{filename}. Uploads from before storage existed
+    // hold just the original filename here and have no stored file.
     @Column(name = "storage_path", nullable = false)
     private String storagePath;
 
@@ -48,4 +48,8 @@ public class LearningMaterial {
     @CreationTimestamp
     @Column(name = "uploaded_at", nullable = false, updatable = false)
     private Instant uploadedAt;
+
+    public boolean isFileStored() {
+        return storagePath != null && collectionId != null && storagePath.startsWith(collectionId + "/");
+    }
 }

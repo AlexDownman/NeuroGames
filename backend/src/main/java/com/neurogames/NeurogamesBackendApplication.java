@@ -2,6 +2,7 @@ package com.neurogames;
 
 import com.neurogames.config.AiProperties;
 import com.neurogames.config.DotenvLoader;
+import com.neurogames.config.StorageProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -13,7 +14,7 @@ import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoCon
 // LecturerAuthenticationConverter builds the Authentication directly from a
 // verified Supabase JWT — so this auto-config has nothing useful to do here.
 @SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
-@EnableConfigurationProperties(AiProperties.class)
+@EnableConfigurationProperties({AiProperties.class, StorageProperties.class})
 public class NeurogamesBackendApplication {
 
 	public static void main(String[] args) {

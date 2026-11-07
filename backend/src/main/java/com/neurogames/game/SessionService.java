@@ -38,8 +38,8 @@ public class SessionService {
         GameSession session = new GameSession();
         session.setGameId(game.getId());
         session.setSessionCode(generateUniqueSessionCode());
-        session.setStatus(SessionStatus.ACTIVE);
-        session.setStartedAt(Instant.now());
+        // Opens in the lobby; the host starts the game (and startedAt) via host_start_game.
+        session.setStatus(SessionStatus.PENDING);
 
         return GameSessionResponse.from(sessionRepository.saveAndFlush(session));
     }

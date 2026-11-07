@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
-import HeroPreview from '../components/HeroPreview'
 import AgentFlow from '../components/AgentFlow'
 
 const STEPS = [
@@ -78,10 +77,6 @@ export default function LandingPage() {
             >
               See how it works
             </a>
-          </div>
-
-          <div className="mt-16">
-            <HeroPreview />
           </div>
         </main>
       </div>

@@ -81,11 +81,19 @@ export interface LearningMaterial {
   fileType: string
   extractionStatus: 'pending' | 'processing' | 'completed' | 'failed'
   hasExtractedContent: boolean
+  // false for uploads made before files were kept in storage
+  fileStored: boolean
   uploadedAt: string
 }
 
 export const listMaterials = (collectionId: string) =>
   apiFetch<LearningMaterial[]>(`/api/collections/${collectionId}/materials`)
+
+// A short-lived signed link to the original file in Supabase Storage.
+export const getMaterialDownloadUrl = (collectionId: string, materialId: string) =>
+  apiFetch<{ url: string; filename: string; expiresAt: string }>(
+    `/api/collections/${collectionId}/materials/${materialId}/download-url`,
+  )
 
 export function uploadMaterial(collectionId: string, file: File) {
   const formData = new FormData()

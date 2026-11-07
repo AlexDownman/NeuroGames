@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import CollectionWorkspacePage from './pages/CollectionWorkspacePage'
 import AnswerRunPlayPage from './pages/AnswerRunPlayPage'
+import HostSessionPage from './pages/HostSessionPage'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/dashboard/collections/:collectionId" element={<CollectionWorkspacePage />} />
       <Route path="/play/:sessionCode" element={<AnswerRunPlayPage />} />
+      <Route path="/host/:sessionId" element={<HostSessionPage />} />
     </Routes>
   )
 }

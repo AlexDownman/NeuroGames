@@ -11,6 +11,7 @@ public record LearningMaterialResponse(
         String fileType,
         String extractionStatus,
         boolean hasExtractedContent,
+        boolean fileStored,
         Instant uploadedAt) {
 
     public static LearningMaterialResponse from(LearningMaterial material) {
@@ -20,6 +21,7 @@ public record LearningMaterialResponse(
                 material.getFileType().name().toLowerCase(Locale.ROOT),
                 material.getExtractionStatus().name().toLowerCase(Locale.ROOT),
                 material.getExtractedContent() != null && !material.getExtractedContent().isBlank(),
+                material.isFileStored(),
                 material.getUploadedAt());
     }
 }

@@ -45,4 +45,12 @@ app:
     # Never sent to the frontend — question generation is server-side only.
     api-key: ${OPENAI_API_KEY}
     model: ${OPENAI_MODEL:gpt-4o-mini}
+  storage:
+    # Supabase Storage bucket for uploaded collection resources. Requests are
+    # made with the calling teacher's JWT, so the bucket's RLS policies in
+    # database/schema.sql apply; the publishable key is not a secret.
+    url: ${SUPABASE_URL}/storage/v1
+    publishable-key: ${SUPABASE_PUBLISHABLE_KEY}
+    bucket: ${SUPABASE_STORAGE_BUCKET:Collection-Resources}
+    signed-url-ttl: 5m
 

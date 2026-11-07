@@ -1,10 +1,10 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   createAnswerRunGame,
-  endSession,
   generateQuestions,
   getCollection,
+  getMaterialDownloadUrl,
   listGames,
   listMaterials,
   listQuestions,
@@ -13,7 +13,6 @@ import {
   uploadMaterial,
   type Collection,
   type Game,
-  type GameSession,
   type LearningMaterial,
   type Question,
 } from '../lib/api'
@@ -139,13 +138,57 @@ function MaterialsSection({
               key={material.id}
               className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm"
             >
-              <span>{material.filename}</span>
-              <StatusBadge status={material.extractionStatus} />
+              <span className="min-w-0 truncate">{material.filename}</span>
+              <span className="flex shrink-0 items-center gap-3">
+                {material.fileStored && <OpenMaterialButton collectionId={collectionId} materialId={material.id} />}
+                <StatusBadge status={material.extractionStatus} />
+              </span>
             </li>
           ))}
         </ul>
       )}
     </Section>
+  )
+}
+
+function OpenMaterialButton({ collectionId, materialId }: { collectionId: string; materialId: string }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function open() {
+    // Open the tab synchronously (inside the click) so popup blockers allow
+    // it, then point it at the signed URL once the backend returns one.
+    const tab = window.open('', '_blank')
+    setBusy(true)
+    setError('')
+    try {
+      const { url } = await getMaterialDownloadUrl(collectionId, materialId)
+      if (tab) {
+        tab.opener = null
+        tab.location.href = url
+      } else {
+        window.location.href = url
+      }
+    } catch (err) {
+      tab?.close()
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {error && <span className="text-xs text-cherry-light">{error}</span>}
+      <button
+        type="button"
+        onClick={open}
+        disabled={busy}
+        className="text-xs font-medium text-baltic-light hover:underline disabled:opacity-60"
+      >
+        {busy ? 'Opening…' : 'Open'}
+      </button>
+    </>
   )
 }
 
@@ -364,7 +407,7 @@ function GamesSection({
   const [title, setTitle] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
-  const [sessionsByGame, setSessionsByGame] = useState<Record<string, GameSession>>({})
+  const navigate = useNavigate()
 
   function toggle(questionId: string) {
     setSelected((current) =>
@@ -388,14 +431,14 @@ function GamesSection({
     }
   }
 
+  // Opens the lobby on the host screen; students join with its code.
   async function handleStart(gameId: string) {
-    const session = await startSession(gameId)
-    setSessionsByGame((current) => ({ ...current, [gameId]: session }))
-  }
-
-  async function handleEnd(gameId: string, sessionId: string) {
-    const session = await endSession(sessionId)
-    setSessionsByGame((current) => ({ ...current, [gameId]: session }))
+    try {
+      const session = await startSession(gameId)
+      navigate(`/host/${session.id}`)
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   return (
@@ -451,45 +494,21 @@ function GamesSection({
 
       {games.length > 0 && (
         <ul className="mt-6 space-y-2">
-          {games.map((game) => {
-            const session = sessionsByGame[game.id]
-            return (
-              <li key={game.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{game.title}</span>
-                  <span className="text-xs text-porcelain/50">{game.questionCount} questions</span>
-                </div>
-
-                {session ? (
-                  <div className="mt-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-porcelain/50">Session code</p>
-                      <p className="font-mono text-xl tracking-[0.3em] text-baltic-light">{session.sessionCode}</p>
-                    </div>
-                    {session.status === 'active' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleEnd(game.id, session.id)}
-                        className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold hover:bg-white/20"
-                      >
-                        End session
-                      </button>
-                    ) : (
-                      <span className="text-xs text-porcelain/50">Ended</span>
-                    )}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleStart(game.id)}
-                    className="mt-3 rounded-lg bg-cherry px-3.5 py-2 text-sm font-semibold hover:bg-cherry-light"
-                  >
-                    Start session
-                  </button>
-                )}
-              </li>
-            )
-          })}
+          {games.map((game) => (
+            <li key={game.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{game.title}</span>
+                <span className="text-xs text-porcelain/50">{game.questionCount} questions</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleStart(game.id)}
+                className="mt-3 rounded-lg bg-cherry px-3.5 py-2 text-sm font-semibold hover:bg-cherry-light"
+              >
+                Host live session
+              </button>
+            </li>
+          ))}
         </ul>
       )}
     </Section>

@@ -24,8 +24,6 @@ const STEPS: Array<{ node: number; edge: number | null; reverse?: boolean; messa
   { node: 5, edge: 4, message: 'Saved and published', orchestrator: 'Done — the game is live' },
 ]
 
-const FUTURE_AGENTS = ['Learning Analysis', 'Revision Recommendation', 'Lecturer Assistant']
-
 const STEP_MS = 2400
 
 export default function AgentFlow() {
@@ -115,15 +113,6 @@ export default function AgentFlow() {
               </div>
             )
           })}
-        </div>
-
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-2 text-xs">
-          <span className="font-medium text-ink/40">Coming next:</span>
-          {FUTURE_AGENTS.map((agent) => (
-            <span key={agent} className="rounded-full border border-dashed border-ink/20 px-3 py-1 text-ink/50">
-              {agent} agent
-            </span>
-          ))}
         </div>
       </div>
     </div>
