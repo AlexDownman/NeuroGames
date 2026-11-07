@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: neurogames-backend
+  datasource:
+    url: jdbc:postgresql://${SUPABASE_DB_HOST}:${SUPABASE_DB_PORT:5432}/${SUPABASE_DB_NAME:postgres}?sslmode=require
+    username: ${SUPABASE_DB_USER:postgres}
+    password: ${SUPABASE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    # Schema lives in database/schema.sql, run directly against Supabase.
+    # Hibernate must never try to create/alter these tables itself: the
+    # lecturers table is populated by a Postgres trigger on auth.users and
+    # every table has RLS policies that assume the shape in that script.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+app:
+  supabase:
+    # Settings -> API -> JWT Secret in the Supabase dashboard. Used only to
+    # verify tokens Supabase already issued — this backend never signs its own.
+    jwt-secret: ${SUPABASE_JWT_SECRET}
