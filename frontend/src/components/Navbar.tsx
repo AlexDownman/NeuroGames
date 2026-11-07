@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useAuth } from '../lib/AuthContext'
+import { useAuth } from '../lib/auth'
 
 const LINKS = [
   { label: 'How it works', href: '#how-it-works' },
@@ -8,7 +8,7 @@ const LINKS = [
 ]
 
 export default function Navbar() {
-  const { session } = useAuth()
+  const { isTeacher } = useAuth()
 
   return (
     <header className="relative z-10 flex items-center justify-between px-6 py-5 md:px-12">
@@ -28,7 +28,7 @@ export default function Navbar() {
       </nav>
 
       <div className="flex items-center gap-3">
-        {session ? (
+        {isTeacher ? (
           <Link
             to="/dashboard"
             className="rounded-lg bg-baltic px-4 py-2 text-sm font-semibold text-porcelain shadow-lg shadow-baltic/30 transition hover:bg-baltic-light"

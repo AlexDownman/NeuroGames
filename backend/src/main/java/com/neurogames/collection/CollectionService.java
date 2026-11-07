@@ -35,7 +35,9 @@ public class CollectionService {
         collection.setDescription(request.description());
         collection.setPublicCollection(request.isPublic());
 
-        return CollectionResponse.from(collectionRepository.save(collection));
+        // Flush, not save: Hibernate only fills @CreationTimestamp/@UpdateTimestamp
+        // at flush time, which would otherwise be after the response is built.
+        return CollectionResponse.from(collectionRepository.saveAndFlush(collection));
     }
 
     public CollectionResponse update(UUID collectionId, CollectionRequest request, UUID ownerId) {
@@ -45,7 +47,7 @@ public class CollectionService {
         collection.setDescription(request.description());
         collection.setPublicCollection(request.isPublic());
 
-        return CollectionResponse.from(collectionRepository.save(collection));
+        return CollectionResponse.from(collectionRepository.saveAndFlush(collection));
     }
 
     public void delete(UUID collectionId, UUID ownerId) {

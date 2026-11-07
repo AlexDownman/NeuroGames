@@ -45,8 +45,9 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-porcelain/80">Email</label>
+              <label htmlFor="login-email" className="mb-1.5 block text-sm font-medium text-porcelain/80">Email</label>
               <input
+                id="login-email"
                 required
                 type="email"
                 value={email}
@@ -57,8 +58,9 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-porcelain/80">Password</label>
+              <label htmlFor="login-password" className="mb-1.5 block text-sm font-medium text-porcelain/80">Password</label>
               <input
+                id="login-password"
                 required
                 type="password"
                 value={password}
@@ -91,7 +93,7 @@ export default function LoginPage() {
           </p>
           <p className="mt-2 text-center text-xs text-porcelain/40">
             Joining a game as a student? You don't need an account —{' '}
-            <Link to="/signup" className="underline hover:text-porcelain/70">
+            <Link to="/signup?role=student" className="underline hover:text-porcelain/70">
               enter your session code here
             </Link>
             .
