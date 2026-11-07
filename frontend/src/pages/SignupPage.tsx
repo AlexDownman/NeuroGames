@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, type AccountRole } from '../lib/supabaseClient'
 
 const ROLES: Array<{
@@ -26,7 +26,11 @@ type Status = 'idle' | 'submitting' | 'success' | 'error'
 
 export default function SignupPage() {
   const navigate = useNavigate()
-  const [role, setRole] = useState<AccountRole | null>(null)
+  const [searchParams] = useSearchParams()
+  // /signup?role=student (linked from the login page) skips the role picker.
+  const [role, setRole] = useState<AccountRole | null>(
+    searchParams.get('role') === 'student' ? 'student' : null,
+  )
   const [status, setStatus] = useState<Status>('idle')
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -50,7 +54,7 @@ export default function SignupPage() {
     setStatus('submitting')
     setErrorMessage('')
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName, role: 'teacher' } },
@@ -62,19 +66,39 @@ export default function SignupPage() {
       return
     }
 
-    navigate('/dashboard')
+    // With email confirmation off, Supabase signs the teacher straight in.
+    if (data.session) {
+      navigate('/dashboard')
+      return
+    }
+
+    setStatus('success')
   }
 
   async function handleStudentSubmit(event: FormEvent) {
     event.preventDefault()
+
+    // `required` accepts whitespace-only input; the DB would reject it anyway.
+    if (!displayName.trim()) {
+      setStatus('error')
+      setErrorMessage('Enter a name for the leaderboard.')
+      return
+    }
+
     setStatus('submitting')
     setErrorMessage('')
 
-    const { error: signInError } = await supabase.auth.signInAnonymously()
-    if (signInError) {
-      setStatus('error')
-      setErrorMessage(signInError.message)
-      return
+    // Reuse an existing session: signInAnonymously() always creates a new
+    // user, so calling it on every submit (e.g. retrying a mistyped code)
+    // left orphaned users and gave a re-joining student a new participant.
+    const { data: existing } = await supabase.auth.getSession()
+    if (!existing.session) {
+      const { error: signInError } = await supabase.auth.signInAnonymously()
+      if (signInError) {
+        setStatus('error')
+        setErrorMessage(signInError.message)
+        return
+      }
     }
 
     const { error: joinError } = await supabase.rpc('join_game_session', {
@@ -169,10 +193,11 @@ export default function SignupPage() {
 
               <form onSubmit={handleTeacherSubmit} className="mt-8 space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-porcelain/80">
+                  <label htmlFor="signup-full-name" className="mb-1.5 block text-sm font-medium text-porcelain/80">
                     Full name
                   </label>
                   <input
+                    id="signup-full-name"
                     required
                     type="text"
                     value={fullName}
@@ -183,8 +208,9 @@ export default function SignupPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-porcelain/80">Email</label>
+                  <label htmlFor="signup-email" className="mb-1.5 block text-sm font-medium text-porcelain/80">Email</label>
                   <input
+                    id="signup-email"
                     required
                     type="email"
                     value={email}
@@ -195,10 +221,11 @@ export default function SignupPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-porcelain/80">
+                  <label htmlFor="signup-password" className="mb-1.5 block text-sm font-medium text-porcelain/80">
                     Password
                   </label>
                   <input
+                    id="signup-password"
                     required
                     minLength={8}
                     type="password"
@@ -242,10 +269,11 @@ export default function SignupPage() {
 
               <form onSubmit={handleStudentSubmit} className="mt-8 space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-porcelain/80">
+                  <label htmlFor="join-session-code" className="mb-1.5 block text-sm font-medium text-porcelain/80">
                     Session code
                   </label>
                   <input
+                    id="join-session-code"
                     required
                     type="text"
                     value={sessionCode}
@@ -257,16 +285,18 @@ export default function SignupPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-porcelain/80">
+                  <label htmlFor="join-display-name" className="mb-1.5 block text-sm font-medium text-porcelain/80">
                     Your name
                   </label>
                   <input
+                    id="join-display-name"
                     required
                     type="text"
                     value={displayName}
                     onChange={(event) => setDisplayName(event.target.value)}
                     className="w-full rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm outline-none transition focus:border-baltic"
                     placeholder="Shown on the leaderboard"
+                    maxLength={40}
                   />
                 </div>
 

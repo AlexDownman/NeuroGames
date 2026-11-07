@@ -10,6 +10,22 @@
   --color-baltic-light: #1584bb;
   --color-ink: #000004;
   --color-raspberry: #7e1946;
+
+  /* AgentFlow: a data packet travelling along a connector */
+  --animate-packet-x: packet-x 0.9s ease-in-out both;
+  --animate-packet-y: packet-y 0.9s ease-in-out both;
+
+  @keyframes packet-x {
+    0% { left: 0%; opacity: 0; }
+    15%, 85% { opacity: 1; }
+    100% { left: 100%; opacity: 0; }
+  }
+
+  @keyframes packet-y {
+    0% { top: 0%; opacity: 0; }
+    15%, 85% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
 }
 
 html {

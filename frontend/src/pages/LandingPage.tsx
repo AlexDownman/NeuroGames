@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import HeroPreview from '../components/HeroPreview'
+import AgentFlow from '../components/AgentFlow'
 
 const STEPS = [
   {
@@ -31,6 +32,8 @@ const GAME_MODES = [
   { emoji: '🔤', title: 'Word Scramble', description: 'Unscramble key terms pulled from your materials.' },
   { emoji: '🚪', title: 'Escape Room', description: 'Chain challenges together to unlock the next stage.' },
 ]
+
+const CURRENT_YEAR = new Date().getFullYear()
 
 const SUBJECTS = [
   'Java Programming',
@@ -106,6 +109,8 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+
+          <AgentFlow />
         </div>
       </section>
 
@@ -179,7 +184,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-white/10 bg-ink px-6 py-10 text-sm text-porcelain/50">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 sm:flex-row">
-          <span>© {new Date().getFullYear()} NeuroGames</span>
+          <span>© {CURRENT_YEAR} NeuroGames</span>
           <div className="flex gap-6">
             <a href="#how-it-works" className="hover:text-porcelain">
               How it works

@@ -1,9 +1,9 @@
 import { Link, Navigate } from 'react-router-dom'
-import { useAuth } from '../lib/AuthContext'
+import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabaseClient'
 
 export default function DashboardPage() {
-  const { session, loading } = useAuth()
+  const { session, loading, isTeacher } = useAuth()
 
   if (loading) {
     return (
@@ -13,7 +13,7 @@ export default function DashboardPage() {
     )
   }
 
-  if (!session) {
+  if (!session || !isTeacher) {
     return <Navigate to="/login" replace />
   }
 
