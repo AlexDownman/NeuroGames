@@ -50,6 +50,10 @@ spring:
           audiences: authenticated
 
 app:
+  cors:
+    # Comma-separated origin patterns. The Vercel entries are the production
+    # domain and this project's preview/deployment URLs.
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,https://neuro-games-frontend.vercel.app,https://neuro-games-frontend-*-alexdownmans-projects.vercel.app}
   ai:
     # Never sent to the frontend — question generation is server-side only.
     api-key: ${OPENAI_API_KEY}

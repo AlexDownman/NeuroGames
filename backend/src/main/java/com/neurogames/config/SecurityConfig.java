@@ -3,6 +3,7 @@ package com.neurogames.config;
 import com.neurogames.auth.LecturerAuthenticationConverter;
 import jakarta.servlet.DispatcherType;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -45,10 +46,16 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // Needed even when the frontend shares the backend's domain (Vercel): browsers
+    // send Origin on every POST/PATCH/DELETE, and behind Vercel's proxy Spring sees
+    // its own internal host, so it can't tell the request is same-origin.
+    @Value("${app.cors.allowed-origin-patterns}")
+    private List<String> allowedOriginPatterns;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("http://localhost:*"));
+        configuration.setAllowedOriginPatterns(allowedOriginPatterns);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
