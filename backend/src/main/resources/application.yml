@@ -9,11 +9,23 @@ spring:
   # database/schema.sql — those protect direct Supabase client access, not
   # this backend. Every service here must scope queries to the caller's own
   # lecturer id itself (e.g. CollectionRepository.findByIdAndOwnerId).
+  # On Vercel, use Supabase's transaction pooler (port 6543): each function
+  # instance holds its own pool, and the session pooler (5432) caps all
+  # clients at 15, so a few instances exhaust it. Transaction pooling can't
+  # keep server-side prepared statements, hence prepareThreshold=0.
   datasource:
-    url: jdbc:postgresql://${SUPABASE_DB_HOST}:${SUPABASE_DB_PORT:5432}/${SUPABASE_DB_NAME:postgres}?sslmode=require
+    url: jdbc:postgresql://${SUPABASE_DB_HOST}:${SUPABASE_DB_PORT:5432}/${SUPABASE_DB_NAME:postgres}?sslmode=require&prepareThreshold=0
     username: ${SUPABASE_DB_USER:postgres}
     password: ${SUPABASE_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # Small per-instance pool that empties when idle: instances scale out,
+      # the database's connection budget doesn't.
+      maximum-pool-size: ${DB_POOL_SIZE:3}
+      minimum-idle: 0
+      # Hikari takes plain milliseconds here.
+      idle-timeout: 60000
+      connection-timeout: 10000
   jpa:
     # Schema lives in database/schema.sql, run directly against Supabase.
     # Hibernate must never try to create/alter these tables itself: the

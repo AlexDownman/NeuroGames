@@ -1,6 +1,7 @@
 package com.neurogames.config;
 
 import com.neurogames.auth.LecturerAuthenticationConverter;
+import jakarta.servlet.DispatcherType;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,6 +33,10 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // A failure while authenticating (e.g. the lecturer lookup can't reach
+                        // the database) is forwarded to /error with no Authentication; without
+                        // this it would be re-reported as 401/403 instead of the real 500.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/api/**").hasRole(LecturerAuthenticationConverter.TEACHER_ROLE)
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
