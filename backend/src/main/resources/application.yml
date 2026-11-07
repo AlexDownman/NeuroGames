@@ -36,3 +36,9 @@ spring:
           jws-algorithms: ES256, RS256
           audiences: authenticated
 
+app:
+  ai:
+    # Never sent to the frontend — question generation is server-side only.
+    api-key: ${OPENAI_API_KEY}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+

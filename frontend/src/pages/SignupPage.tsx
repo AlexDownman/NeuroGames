@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase, type AccountRole } from '../lib/supabaseClient'
 
 const ROLES: Array<{
@@ -25,6 +25,7 @@ const ROLES: Array<{
 type Status = 'idle' | 'submitting' | 'success' | 'error'
 
 export default function SignupPage() {
+  const navigate = useNavigate()
   const [role, setRole] = useState<AccountRole | null>(null)
   const [status, setStatus] = useState<Status>('idle')
   const [errorMessage, setErrorMessage] = useState('')
@@ -61,7 +62,7 @@ export default function SignupPage() {
       return
     }
 
-    setStatus('success')
+    navigate('/dashboard')
   }
 
   async function handleStudentSubmit(event: FormEvent) {
@@ -106,23 +107,11 @@ export default function SignupPage() {
           {status === 'success' ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center">
               <p className="text-2xl">✅</p>
-              {role === 'teacher' ? (
-                <>
-                  <h1 className="mt-3 text-xl font-bold">Check your email</h1>
-                  <p className="mt-2 text-sm text-porcelain/60">
-                    We sent a confirmation link to <span className="text-porcelain">{email}</span>.
-                    Follow it to finish setting up your teacher account.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h1 className="mt-3 text-xl font-bold">You're in, {displayName}!</h1>
-                  <p className="mt-2 text-sm text-porcelain/60">
-                    You've joined session <span className="text-porcelain">{sessionCode.toUpperCase()}</span>.
-                    The game view is coming soon — for now, ask your teacher what's next.
-                  </p>
-                </>
-              )}
+              <h1 className="mt-3 text-xl font-bold">You're in, {displayName}!</h1>
+              <p className="mt-2 text-sm text-porcelain/60">
+                You've joined session <span className="text-porcelain">{sessionCode.toUpperCase()}</span>.
+                The game view is coming soon — for now, ask your teacher what's next.
+              </p>
               <Link
                 to="/"
                 className="mt-6 inline-block rounded-lg bg-baltic px-5 py-2.5 text-sm font-semibold hover:bg-baltic-light"

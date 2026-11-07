@@ -35,7 +35,11 @@ public class CollectionService {
         collection.setDescription(request.description());
         collection.setPublicCollection(request.isPublic());
 
-        return CollectionResponse.from(collectionRepository.save(collection));
+        // flush, not just save: @CreationTimestamp/@UpdateTimestamp are only
+        // populated in-memory when Hibernate actually issues the INSERT, which
+        // a plain save() can defer until transaction commit — after this
+        // method has already built the response from a still-null field.
+        return CollectionResponse.from(collectionRepository.saveAndFlush(collection));
     }
 
     public CollectionResponse update(UUID collectionId, CollectionRequest request, UUID ownerId) {
@@ -45,7 +49,7 @@ public class CollectionService {
         collection.setDescription(request.description());
         collection.setPublicCollection(request.isPublic());
 
-        return CollectionResponse.from(collectionRepository.save(collection));
+        return CollectionResponse.from(collectionRepository.saveAndFlush(collection));
     }
 
     public void delete(UUID collectionId, UUID ownerId) {
