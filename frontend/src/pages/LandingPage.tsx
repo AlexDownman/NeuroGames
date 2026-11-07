@@ -28,9 +28,6 @@ const GAME_MODES = [
   { emoji: '🏃', title: 'Answer Run', description: 'Endless runner — correct answers keep you moving.' },
   { emoji: '⚔️', title: 'Quiz Battle', description: 'Head-to-head quiz with live leaderboards.' },
   { emoji: '🧩', title: 'Match-Up', description: 'Pair terms with definitions against the clock.' },
-  { emoji: '💰', title: 'Millionaire-Style', description: 'Escalating difficulty, with lifelines to spare you.' },
-  { emoji: '🔤', title: 'Word Scramble', description: 'Unscramble key terms pulled from your materials.' },
-  { emoji: '🚪', title: 'Escape Room', description: 'Chain challenges together to unlock the next stage.' },
 ]
 
 const CURRENT_YEAR = new Date().getFullYear()
@@ -64,8 +61,8 @@ export default function LandingPage() {
             Meet your AI game masters.
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg text-porcelain/70">
-            NeuroGames turns lecture materials into playable game series — quizzes, battles, escape
-            rooms — built by a team of AI agents. Create a collection, publish a game, and compete
+            NeuroGames turns lecture materials into playable game series — quiz battles, answer
+            runs, match-ups — built by a team of AI agents. Create a collection, publish a game, and compete
             with your friends.
           </p>
 
@@ -121,14 +118,14 @@ export default function LandingPage() {
             Game modes
           </p>
           <h2 className="mt-3 text-center text-3xl font-bold tracking-tight md:text-4xl">
-            One question bank. Six ways to play.
+            One question bank. Three ways to play.
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-center text-porcelain/60">
             Every game mode draws from the same AI-generated question bank, so your content never
             goes to waste.
           </p>
 
-          <div className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {GAME_MODES.map((mode) => (
               <div
                 key={mode.title}

@@ -158,7 +158,7 @@ create table public.games (
   title         text not null,
   description   text,
   game_type     text not null
-                  check (game_type in ('answer_run', 'quiz_battle', 'match_up', 'millionaire', 'word_scramble', 'escape_room')),
+                  check (game_type in ('answer_run', 'quiz_battle', 'match_up')),
   configuration jsonb not null default '{}'::jsonb,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
